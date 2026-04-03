@@ -1,0 +1,13 @@
+{
+  "Resource": {
+    "id": "string",
+    "url": "string",
+    "status": "string",
+    "created_at": "string",
+    "updated_at": "string",
+    "index_error_code": "string|null",
+    "last_lifecycle_event_at": "string|null",
+    "parse_error_code": "string|null",
+    "user_id": "string"
+  }
+}
