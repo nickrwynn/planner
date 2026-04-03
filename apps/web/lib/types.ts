@@ -8,6 +8,9 @@ export type Course = {
   grading_schema_json?: unknown | null;
   created_at: string;
   updated_at: string;
+  parse_error_code?: string | null;
+  index_error_code?: string | null;
+  last_lifecycle_event_at?: string | null;
 };
 
 export type Task = {

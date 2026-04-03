@@ -143,7 +143,9 @@ jobs:
         run: pnpm --filter @planner/web exec playwright install --with-deps chromium
 
       - name: Run web e2e
-        run: pnpm --filter @planner/web test:e2e
+        run: export STORAGE_ROOT=/tmp/uploads
+export AUTH_MODE=dev
+pnpm --filter @planner/web test:e2e
 
       - name: Run release-critical web e2e specs
         run: pnpm --filter @planner/web test:e2e e2e/full-flow.spec.ts e2e/upload-search.spec.ts e2e/a11y.spec.ts
