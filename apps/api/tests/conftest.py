@@ -22,7 +22,10 @@ def test_database_url(tmp_path_factory) -> str:
 
 @pytest.fixture(scope="session")
 def engine(test_database_url: str):
-    engine_ = create_engine(test_database_url, connect_args={"check_same_thread": False})
+    if test_database_url.startswith("sqlite"):
+        engine_ = create_engine(test_database_url, connect_args={"check_same_thread": False})
+    else:
+        engine_ = create_engine(test_database_url)
     Base.metadata.create_all(bind=engine_)
     yield engine_
     Base.metadata.drop_all(bind=engine_)
