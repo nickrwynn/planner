@@ -15,7 +15,6 @@ from app.main import create_app
 
 @pytest.fixture(scope="session")
 def test_database_url(tmp_path_factory) -> str:
-    # Use a file-based sqlite DB so multiple connections share the same DB.
     db_path = tmp_path_factory.mktemp("db") / "test.db"
     url = os.getenv("TEST_DATABASE_URL", f"sqlite+pysqlite:///{db_path}")
     return url
@@ -27,6 +26,22 @@ def engine(test_database_url: str):
     Base.metadata.create_all(bind=engine_)
     yield engine_
     Base.metadata.drop_all(bind=engine_)
+
+
+@pytest.fixture(autouse=True)
+def clean_db(engine):
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    session = SessionLocal()
+    try:
+        for table in reversed(Base.metadata.sorted_tables):
+            session.execute(table.delete())
+        session.commit()
+        yield
+        for table in reversed(Base.metadata.sorted_tables):
+            session.execute(table.delete())
+        session.commit()
+    finally:
+        session.close()
 
 
 @pytest.fixture()
@@ -41,7 +56,6 @@ def db_session(engine):
 
 @pytest.fixture()
 def client(test_database_url: str, engine, monkeypatch, tmp_path):
-    # `engine` runs create_all so API and tests share the same SQLite schema.
     os.environ["DATABASE_URL"] = test_database_url
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
     os.environ["STORAGE_ROOT"] = str(tmp_path / "uploads")
@@ -53,4 +67,3 @@ def client(test_database_url: str, engine, monkeypatch, tmp_path):
 
     with TestClient(app) as c:
         yield c
-
