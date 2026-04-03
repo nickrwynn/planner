@@ -26,3 +26,17 @@ data/uploads/**
 .idea/
 .vscode/
 
+
+node_modules/
+.venv/
+.venv-test/
+__pycache__/
+*.pyc
+.env
+
+node_modules/
+.venv/
+.venv-test/
+__pycache__/
+*.pyc
+.env
