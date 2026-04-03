@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgres:16
+    command: ["postgres", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+
+  redis:
+    image: redis:7
+    ports:
+      - "${REDIS_PORT}:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      APP_ENV: ${APP_ENV:-dev}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      STORAGE_ROOT: ${STORAGE_ROOT}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBEDDINGS_MODEL: ${OPENAI_EMBEDDINGS_MODEL:-}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-}
+      SENTENCE_TRANSFORMERS_MODEL: ${SENTENCE_TRANSFORMERS_MODEL:-}
+      AUTH_MODE: ${AUTH_MODE:-bearer}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me}
+      AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-}
+      AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+      TELEMETRY_SERVICE_NAME: ${TELEMETRY_SERVICE_NAME:-academic-os-api}
+      APP_RUNTIME_PROFILE: ${APP_RUNTIME_PROFILE:-dev}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$APP_RUNTIME_PROFILE" = "prod" ]; then
+          exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000;
+        fi
+        exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./apps/api:/app
+      - ./data:/data
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "${API_PORT}:8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      APP_ENV: ${APP_ENV:-dev}
+      STORAGE_ROOT: ${STORAGE_ROOT}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-}
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_EMBEDDINGS_MODEL: ${OPENAI_EMBEDDINGS_MODEL:-}
+      SENTENCE_TRANSFORMERS_MODEL: ${SENTENCE_TRANSFORMERS_MODEL:-}
+    volumes:
+      # Mount worker sources for live reload; also mount API package so `import app` works (bind mount replaces image /app).
+      - ./apps/worker:/app
+      - ./apps/api/app:/app/app
+      - ./data:/data
+    depends_on:
+      - postgres
+      - redis
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
+      API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL}
+      NEXT_PUBLIC_DEV_USER_ID: ${NEXT_PUBLIC_DEV_USER_ID:-}
+      NEXT_PUBLIC_API_USER_ID: ${NEXT_PUBLIC_API_USER_ID:-}
+      DEV_USER_ID: ${DEV_USER_ID:-}
+      API_USER_ID: ${API_USER_ID:-}
+      NEXT_TELEMETRY_DISABLED: "1"
+      APP_RUNTIME_PROFILE: ${APP_RUNTIME_PROFILE:-dev}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ "$APP_RUNTIME_PROFILE" = "prod" ]; then
+          pnpm exec next build && exec pnpm exec next start -H 0.0.0.0 -p 3000;
+        fi
+        exec pnpm exec next dev -H 0.0.0.0 -p 3000
+    volumes:
+      - ./apps/web:/app/apps/web
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT}:3000"
+
+volumes:
+  postgres_data:
+

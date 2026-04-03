@@ -1,0 +1,33 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic-settings==2.4.0
+SQLAlchemy==2.0.32
+psycopg[binary]==3.2.1
+redis==5.0.8
+alembic==1.13.2
+PyJWT==2.9.0
+
+# Testing (Sprint 2)
+pytest==8.3.2
+httpx==0.27.2
+fakeredis==2.23.3
+
+# Uploads (multipart/form-data)
+python-multipart==0.0.9
+
+# Parsing/OCR (Phase 3)
+pypdf==4.3.1
+pillow==10.4.0
+pytesseract==0.3.10
+
+# Embeddings (optional; default MVP is keyword-only search/retrieval)
+openai==1.40.3
+# Observability (optional, enabled by TELEMETRY_ENABLED=true)
+opentelemetry-api==1.27.0
+opentelemetry-sdk==1.27.0
+opentelemetry-instrumentation-fastapi==0.48b0
+opentelemetry-exporter-otlp==1.27.0
+# If you want local embeddings, install these additionally (they pull large deps like torch):
+# sentence-transformers==3.0.1
+# numpy==2.0.1
+
