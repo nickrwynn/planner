@@ -1,0 +1,144 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "ios-v*"
+
+jobs:
+  build_and_upload:
+    runs-on: macos-latest
+    env:
+      NODE_VERSION: "22"
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CAP_SERVER_URL: ${{ secrets.CAP_SERVER_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Validate required secrets
+        run: |
+          for key in APPLE_TEAM_ID APPSTORE_CONNECT_KEY_ID APPSTORE_CONNECT_ISSUER_ID APPSTORE_CONNECT_API_KEY_BASE64 IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 CAP_SERVER_URL; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              exit 1
+            fi
+          done
+          if [[ "${CAP_SERVER_URL}" != https://* ]]; then
+            echo "CAP_SERVER_URL must be HTTPS"
+            exit 1
+          fi
+          if [[ "${CAP_SERVER_URL}" == "https://planner.example.com" ]]; then
+            echo "CAP_SERVER_URL must be set to a real hosted URL"
+            exit 1
+          fi
+        env:
+          APPSTORE_CONNECT_KEY_ID: ${{ secrets.APPSTORE_CONNECT_KEY_ID }}
+          APPSTORE_CONNECT_ISSUER_ID: ${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}
+          APPSTORE_CONNECT_API_KEY_BASE64: ${{ secrets.APPSTORE_CONNECT_API_KEY_BASE64 }}
+          IOS_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build web app
+        run: pnpm --filter @planner/web build
+
+      - name: Add iOS platform if missing
+        run: |
+          if [ ! -d "apps/web/ios/App" ]; then
+            pnpm --filter @planner/web cap:add:ios
+          fi
+
+      - name: Sync Capacitor iOS project
+        run: pnpm --filter @planner/web cap:sync:ios
+
+      - name: Import signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_CERTIFICATE_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+
+      - name: Install provisioning profile
+        run: |
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/app.mobileprovision"
+
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p "$HOME/private_keys"
+          echo "${{ secrets.APPSTORE_CONNECT_API_KEY_BASE64 }}" | base64 --decode > "$HOME/private_keys/AuthKey_${{ secrets.APPSTORE_CONNECT_KEY_ID }}.p8"
+
+      - name: Archive iOS app
+        run: |
+          cd apps/web/ios/App
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath "$RUNNER_TEMP/AcademicOS.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_${{ secrets.APPSTORE_CONNECT_KEY_ID }}.p8" \
+            -authenticationKeyID "${{ secrets.APPSTORE_CONNECT_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}" \
+            DEVELOPMENT_TEAM="${{ env.APPLE_TEAM_ID }}" \
+            archive
+
+      - name: Create export options
+        run: |
+          cat <<'EOF' > "$RUNNER_TEMP/ExportOptions.plist"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+            <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>teamID</key>
+              <string>${{ env.APPLE_TEAM_ID }}</string>
+              <key>uploadSymbols</key>
+              <true/>
+            </dict>
+          </plist>
+          EOF
+
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/AcademicOS.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload to TestFlight
+        run: |
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file "$RUNNER_TEMP/export/App.ipa" \
+            --apiKey "${{ secrets.APPSTORE_CONNECT_KEY_ID }}" \
+            --apiIssuer "${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}" \
+            --verbose
+
+      - name: Upload xcodebuild logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: |
+            ~/Library/Logs/gym
+            ~/Library/Developer/Xcode/DerivedData/**/Logs
