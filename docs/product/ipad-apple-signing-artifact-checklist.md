@@ -65,3 +65,16 @@ Use this checklist to close Apple/App Store Connect/signing blockers before a re
 - API key metadata captured (`APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`) and `.p8` export confirmed.
 - Distribution certificate export (`.p12`) confirmed with password owner reference.
 - App Store provisioning profile reference for `com.academicos.planner`.
+
+## Artifact preparation commands (owner-run)
+
+```bash
+# 1) Encode App Store Connect API key (.p8) for secret storage
+base64 -w 0 AuthKey_<KEY_ID>.p8 > /tmp/APPSTORE_CONNECT_API_KEY_BASE64.txt
+
+# 2) Encode distribution certificate (.p12)
+base64 -w 0 dist-cert.p12 > /tmp/IOS_CERTIFICATE_P12_BASE64.txt
+
+# 3) Encode App Store provisioning profile (.mobileprovision)
+base64 -w 0 appstore.mobileprovision > /tmp/IOS_PROVISIONING_PROFILE_BASE64.txt
+```

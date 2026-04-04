@@ -68,3 +68,19 @@ file /tmp/profile.mobileprovision
 - `gh secret list` shows all 8 required keys.
 - Local decode checks pass for API key, cert, and profile payloads.
 - `CAP_SERVER_URL` value is HTTPS and not placeholder.
+
+## Secret population commands (owner-run)
+
+```bash
+gh secret set APPLE_TEAM_ID --body "<TEAM_ID>"
+gh secret set APPSTORE_CONNECT_KEY_ID --body "<KEY_ID>"
+gh secret set APPSTORE_CONNECT_ISSUER_ID --body "<ISSUER_UUID>"
+gh secret set APPSTORE_CONNECT_API_KEY_BASE64 --body "$(cat /tmp/APPSTORE_CONNECT_API_KEY_BASE64.txt)"
+gh secret set IOS_CERTIFICATE_P12_BASE64 --body "$(cat /tmp/IOS_CERTIFICATE_P12_BASE64.txt)"
+gh secret set IOS_CERTIFICATE_PASSWORD --body "<P12_PASSWORD>"
+gh secret set IOS_PROVISIONING_PROFILE_BASE64 --body "$(cat /tmp/IOS_PROVISIONING_PROFILE_BASE64.txt)"
+gh secret set CAP_SERVER_URL --body "https://<your-hosted-planner-url>"
+
+# verify presence after set
+gh secret list
+```
