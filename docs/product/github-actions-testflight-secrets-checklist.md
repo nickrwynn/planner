@@ -4,14 +4,15 @@ Use this checklist to verify every secret required by `.github/workflows/ios-tes
 
 ## Ownership and run metadata
 
-- Candidate SHA: `13e4d76738e5ff6933427ad5678b8a72b1a36d99`
+- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
 - Repo admin owner: `nickrwynn`
-- Date (UTC): `2026-04-04T05:11:51Z`
+- Date (UTC): `2026-04-04T05:18:49Z`
 
 ## Phase execution status
 
 - [x] PHASE A complete: remote workflow discoverable (`iOS TestFlight`).
 - [ ] PHASE C blocked: required repository secrets are still absent (`gh secret list` returned empty output).
+- [ ] PHASE C recheck: no new secrets detected as of `2026-04-04T05:18:49Z`.
 
 ## Required repository secrets
 
@@ -58,7 +59,7 @@ file /tmp/profile.mobileprovision
 
 | Check | Result | Evidence reference |
 |---|---|---|
-| Secret presence complete | FAIL | `gh secret list` output empty at 2026-04-04T05:11:51Z |
+| Secret presence complete | FAIL | `gh secret list` output empty at 2026-04-04T05:18:49Z |
 | Base64 decode checks pass | BLOCKED | Required secret values unavailable for local decode checks |
 | CAP_SERVER_URL reachable | BLOCKED | `CAP_SERVER_URL` secret missing |
 | First signed upload run | BLOCKED | Cannot dispatch `ios-testflight.yml` successfully until secrets are present |

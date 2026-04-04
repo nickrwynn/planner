@@ -4,15 +4,16 @@ Use this checklist to close Apple/App Store Connect/signing blockers before a re
 
 ## Ownership and run metadata
 
-- Candidate SHA: `13e4d76738e5ff6933427ad5678b8a72b1a36d99`
+- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
 - Release owner: `nickrwynn` (GitHub)
 - Apple account owner: `BLOCKED - not provided in repo evidence`
-- Date (UTC): `2026-04-04T05:11:51Z`
+- Date (UTC): `2026-04-04T05:18:49Z`
 
 ## Phase execution status
 
 - [x] PHASE A complete: `ios-testflight.yml` is active on remote (`gh workflow list` shows `iOS TestFlight`).
 - [ ] PHASE B in progress: Apple signing artifacts must be populated manually by Apple account owner.
+- [ ] PHASE B recheck: no new Apple artifact evidence captured in repository as of `2026-04-04T05:18:49Z`.
 
 ## Apple Developer + App Store Connect objects
 

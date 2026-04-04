@@ -4,14 +4,14 @@ Use this checklist before promoting builds beyond internal TestFlight testers.
 
 ## Run metadata (required evidence header)
 
-- Candidate SHA: `13e4d76738e5ff6933427ad5678b8a72b1a36d99`
-- GitHub Actions run URL (`ios-testflight.yml`): `https://github.com/nickrwynn/planner/actions/runs/23972013710` (failed at required secrets gate)
+- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
+- GitHub Actions run URL (`ios-testflight.yml`): `https://github.com/nickrwynn/planner/actions/runs/23972118129` (failed at required secrets gate)
 - TestFlight build number: `BLOCKED - no successful upload run yet`
 - App Store Connect app version/build: `BLOCKED - no successful upload run yet`
 - Tester name(s): `BLOCKED - pending internal TestFlight distribution`
 - iPad model(s): `BLOCKED - pending internal TestFlight distribution`
 - iPadOS version(s): `BLOCKED - pending internal TestFlight distribution`
-- Test date (UTC): `2026-04-04T05:12:37Z`
+- Test date (UTC): `2026-04-04T05:19:29Z`
 
 ## iPad web readiness
 
@@ -60,4 +60,5 @@ Current blocker evidence:
 - `gh workflow list` shows `CI` and `iOS TestFlight` workflows on remote.
 - `gh workflow run ios-testflight.yml --ref main` dispatch now succeeds.
 - Run `https://github.com/nickrwynn/planner/actions/runs/23972013710` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`).
+- Run `https://github.com/nickrwynn/planner/actions/runs/23972118129` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`).
 - `gh secret list` returned no configured repository secrets for iOS TestFlight.

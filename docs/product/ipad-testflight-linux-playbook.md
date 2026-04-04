@@ -43,7 +43,7 @@ Checklist artifacts:
 - [x] B2 Capacitor `cap:add:ios` / `cap:sync:ios` path is repeatable. (evidence: scripts present, iOS project present, Node >=22 pinned)
 - [ ] B3 Apple/App Store Connect/signing artifacts are complete and owned. (BLOCKED: checklist still missing Apple artifacts)
 - [ ] B4 GitHub Actions secrets are complete and format-validated. (BLOCKED: no required repo secrets configured)
-- [ ] B5 One successful signed upload run exists in `ios-testflight.yml`. (PARTIAL: workflow is active and dispatch works, but first run failed at `Validate required secrets`)
+- [ ] B5 One successful signed upload run exists in `ios-testflight.yml`. (PARTIAL: workflow is active and dispatch works, but latest runs fail at `Validate required secrets`)
 - [ ] B6 Internal tester install/smoke sign-off is recorded. (BLOCKED: no real-device TestFlight install evidence)
 
 ## Local workflow (Linux)
@@ -79,7 +79,9 @@ Latest dispatch attempt evidence:
 - `2026-04-03T22:48:14Z`: `gh workflow run ios-testflight.yml --ref main` -> `HTTP 404 Not Found`.
 - `2026-04-04T05:12:21Z`: dispatch succeeded, run URL `https://github.com/nickrwynn/planner/actions/runs/23972013710`.
 - `2026-04-04T05:12:37Z`: run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`.
-- Interpretation: PHASE A is closed (workflow discoverable remotely); PHASE C is now the active blocker gate for first signed upload.
+- `2026-04-04T05:19:06Z`: second dispatch succeeded, run URL `https://github.com/nickrwynn/planner/actions/runs/23972118129`.
+- `2026-04-04T05:19:29Z`: second run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`.
+- Interpretation: PHASE A remains closed; PHASE C (secret population) is still the blocking gate before signing and upload stages can execute.
 
 Triggers:
 - manual dispatch
