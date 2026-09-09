@@ -76,7 +76,9 @@ jobs:
       - name: Install provisioning profile
         run: |
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
-          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/app.mobileprovision"
+          PROFILE_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/33c49a5f-f9bd-4558-9f43-7aa017e48a93.mobileprovision"
+          echo "${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}" | base64 --decode > "$PROFILE_PATH"
+          security cms -D -i "$PROFILE_PATH" | grep -E 'Name|UUID|application-identifier' | head -20
 
       - name: Write App Store Connect API key
         run: |
@@ -90,6 +92,7 @@ jobs:
             -project App.xcodeproj \
             -scheme App \
             -configuration Release \
+            -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/StudyFlows.xcarchive" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${{ secrets.APPSTORE_CONNECT_KEY_ID }}.p8" \
@@ -97,21 +100,32 @@ jobs:
             -authenticationKeyIssuerID "${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}" \
             DEVELOPMENT_TEAM="${{ env.APPLE_TEAM_ID }}" \
             PRODUCT_BUNDLE_IDENTIFIER=com.studyflows.app \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE=33c49a5f-f9bd-4558-9f43-7aa017e48a93 \
+            PROVISIONING_PROFILE_SPECIFIER="StudyFlows App Store" \
             archive
 
       - name: Create export options
         run: |
-          cat <<'EOF' > "$RUNNER_TEMP/ExportOptions.plist"
+          cat <<EOF > "$RUNNER_TEMP/ExportOptions.plist"
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
             <dict>
               <key>method</key>
-              <string>app-store</string>
+              <string>app-store-connect</string>
               <key>signingStyle</key>
-              <string>automatic</string>
+              <string>manual</string>
               <key>teamID</key>
               <string>${{ env.APPLE_TEAM_ID }}</string>
+              <key>signingCertificate</key>
+              <string>Apple Distribution</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                <key>com.studyflows.app</key>
+                <string>StudyFlows App Store</string>
+              </dict>
               <key>uploadSymbols</key>
               <true/>
             </dict>
