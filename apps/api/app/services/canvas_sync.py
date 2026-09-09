@@ -983,44 +983,145 @@ def _collect_student_accessible_files(
     return list(by_id.values())[:_MAX_CANVAS_FILES_PER_COURSE], soft_notes
 
 
+def _delete_canvas_module_item_text_stub(
+    db: Session,
+    *,
+    user: User,
+    course_id_db,
+    course_id: str | int,
+    item_id,
+) -> None:
+    """Remove parsed-text mirrors of module items (assignments/quizzes/links)."""
+    source_ref = f"{course_id}:item:{item_id}"
+    stubs = (
+        db.execute(
+            select(Resource).where(
+                Resource.user_id == user.id,
+                Resource.course_id == course_id_db,
+                Resource.source_type == "canvas_module_item",
+                Resource.source_ref == source_ref,
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for stub in stubs:
+        db.delete(stub)
+    if stubs:
+        db.flush()
+
+
+def _upsert_files_from_html(
+    db: Session,
+    *,
+    redis: Redis,
+    user: User,
+    course: Course,
+    client: CanvasClient,
+    html: str | None,
+    title_override: str | None,
+    module_name: str | None,
+    module_position: int | None,
+    module_id: str | int | None,
+    module_item: dict | None,
+    seen_file_ids: set[str] | None,
+    meta_extra: dict | None = None,
+) -> list[Resource]:
+    """Download Canvas file embeds/links from HTML; return successfully stored resources."""
+    embedded: list[Resource] = []
+    file_ids = extract_canvas_file_ids_from_html(html)
+    for idx, file_id in enumerate(file_ids[:8]):
+        key = str(file_id)
+        if seen_file_ids is not None and key in seen_file_ids:
+            existing_file = (
+                db.execute(
+                    select(Resource).where(
+                        Resource.user_id == user.id,
+                        Resource.source_type == "canvas_file",
+                        Resource.source_ref == key,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing_file:
+                _apply_canvas_module_meta(
+                    existing_file,
+                    module_name=module_name,
+                    module_position=module_position,
+                    module_id=module_id,
+                    module_item=module_item,
+                )
+                if meta_extra:
+                    meta = dict(existing_file.metadata_json or {})
+                    meta.update({k: v for k, v in meta_extra.items() if v is not None})
+                    existing_file.metadata_json = meta
+                db.add(existing_file)
+                embedded.append(existing_file)
+            continue
+        try:
+            canvas_file = client.get_file(file_id)
+        except CanvasAPIError:
+            continue
+        override = title_override if idx == 0 else None
+        try:
+            res = _upsert_canvas_file_resource(
+                db,
+                redis=redis,
+                user=user,
+                course=course,
+                client=client,
+                canvas_file=canvas_file,
+                title_override=override,
+            )
+        except Exception:  # noqa: BLE001
+            continue
+        if not res:
+            continue
+        if seen_file_ids is not None:
+            seen_file_ids.add(key)
+        _apply_canvas_module_meta(
+            res,
+            module_name=module_name,
+            module_position=module_position,
+            module_id=module_id,
+            module_item=module_item,
+        )
+        if meta_extra:
+            meta = dict(res.metadata_json or {})
+            meta.update({k: v for k, v in meta_extra.items() if v is not None})
+            res.metadata_json = meta
+        db.add(res)
+        embedded.append(res)
+    return embedded
+
+
 def _upsert_canvas_module_item_resource(
     db: Session,
     *,
     redis: Redis,
     user: User,
     course: Course,
+    client: CanvasClient,
     course_id: str | int,
     module_item: dict,
     module_name: str | None,
     module_position: int | None,
     module_id: str | int | None,
     assignment: dict | None = None,
+    seen_file_ids: set[str] | None = None,
 ) -> Resource | None:
     """
-    Mirror non-file Canvas module items (Assignment, Quiz, Discussion, ExternalUrl, SubHeader)
-    as resources so the Resources view matches Canvas Modules structure and content.
+    For Assignment/Quiz/Discussion/External* module items: download attached/embedded files
+    (PDFs etc). Do not create parsed text/plain stubs — those already live as Tasks when needed.
     """
     item_type = str(module_item.get("type") or "").strip()
     title = str(module_item.get("title") or item_type or "Canvas item").strip()
     item_id = module_item.get("id")
     if item_id is None:
         return None
-    # SubHeaders are section labels inside a module — skip as resources.
     if item_type.lower() == "subheader":
         return None
-
-    source_ref = f"{course_id}:item:{item_id}"
-    existing = (
-        db.execute(
-            select(Resource).where(
-                Resource.user_id == user.id,
-                Resource.source_type == "canvas_module_item",
-                Resource.source_ref == source_ref,
-            )
-        )
-        .scalars()
-        .first()
-    )
 
     body_html = ""
     due_at = None
@@ -1029,128 +1130,35 @@ def _upsert_canvas_module_item_resource(
         body_html = assignment.get("description") if isinstance(assignment.get("description"), str) else ""
         due_at = assignment.get("due_at")
         points = assignment.get("points_possible")
-    external_url = module_item.get("external_url")
-    html_url = module_item.get("html_url")
-
-    parts: list[str] = [title]
-    if due_at:
-        parts.append(f"Due: {due_at}")
-    if points is not None:
-        parts.append(f"Points: {points}")
-    if external_url:
-        parts.append(f"Link: {external_url}")
-    elif html_url:
-        parts.append(f"Canvas: {html_url}")
-    text_body = _strip_html(body_html) if body_html else ""
-    if text_body:
-        parts.append("")
-        parts.append(text_body)
-    elif body_html:
-        parts.append("")
-        parts.append(_strip_html(body_html))
-    data = "\n".join(parts).encode("utf-8")
-    content_hash = hashlib.sha256(data).hexdigest()
-
-    resource_type = {
-        "assignment": "assignment",
-        "quiz": "assignment",
-        "discussion": "page",
-        "discussiontopic": "page",
-        "externalurl": "link",
-        "externaltol": "link",
-        "externaltool": "link",
-    }.get(item_type.lower(), "page")
 
     meta_extra = {
         "points_possible": points,
         "due_at": due_at,
     }
-
-    if existing and existing.content_sha256 == content_hash and existing.storage_path:
-        _apply_canvas_module_meta(
-            existing,
-            module_name=module_name,
-            module_position=module_position,
-            module_id=module_id,
-            module_item=module_item,
-        )
-        meta = dict(existing.metadata_json or {})
-        for k, v in meta_extra.items():
-            if v is not None:
-                meta[k] = v
-        existing.metadata_json = meta
-        existing.title = title
-        existing.resource_type = resource_type
-        db.add(existing)
-        return existing
-
-    settings = get_settings()
-    storage = get_storage_service(settings)
-    filename = "module-item.txt"
-
-    if existing is None:
-        resource = Resource(
-            user_id=user.id,
-            course_id=course.id,
-            title=title,
-            resource_type=resource_type,
-            original_filename=filename,
-            mime_type="text/plain",
-            source_type="canvas_module_item",
-            source_ref=source_ref,
-            parse_status="uploaded",
-            ocr_status="skipped",
-            index_status="pending",
-            lifecycle_state="uploaded",
-            content_sha256=content_hash,
-            metadata_json=meta_extra,
-        )
-        db.add(resource)
-        db.flush()
-        record_resource_event(
-            db,
-            resource=resource,
-            event_type="resource.uploaded",
-            to_state=resource.lifecycle_state,
-            details={"source": "canvas_module_item", "item_type": item_type},
-        )
-    else:
-        resource = existing
-        resource.course_id = course.id
-        resource.title = title
-        resource.resource_type = resource_type
-        resource.original_filename = filename
-        resource.mime_type = "text/plain"
-        resource.content_sha256 = content_hash
-        resource.parse_status = "uploaded"
-        resource.index_status = "pending"
-        resource.lifecycle_state = "uploaded"
-        meta = dict(resource.metadata_json or {})
-        meta.update({k: v for k, v in meta_extra.items() if v is not None})
-        resource.metadata_json = meta
-        db.add(resource)
-        db.flush()
-
-    _apply_canvas_module_meta(
-        resource,
+    embedded = _upsert_files_from_html(
+        db,
+        redis=redis,
+        user=user,
+        course=course,
+        client=client,
+        html=body_html,
+        title_override=title,
         module_name=module_name,
         module_position=module_position,
         module_id=module_id,
         module_item=module_item,
+        seen_file_ids=seen_file_ids,
+        meta_extra=meta_extra,
     )
-    stored = storage.put_bytes(relative_path=f"{resource.id}/{filename}", data=data)
-    resource.storage_path = stored.storage_path
-    db.add(resource)
-    db.flush()
-    _enqueue_resource_index(
-        db,
-        redis=redis,
-        user=user,
-        resource=resource,
-        idempotency_key=f"canvas-module-item:{source_ref}:{content_hash[:12]}",
-        source="canvas_module_item",
+    # Drop any earlier text/plain mirrors of this module row.
+    _delete_canvas_module_item_text_stub(
+        db, user=user, course_id_db=course.id, course_id=course_id, item_id=item_id
     )
-    return resource
+    if not embedded:
+        return None
+    # Prefer a PDF when the assignment embeds several files.
+    pdfs = [r for r in embedded if (r.mime_type or "").lower().endswith("pdf") or "pdf" in (r.mime_type or "").lower()]
+    return (pdfs or embedded)[0]
 
 
 def _upsert_canvas_page_resource(
@@ -1192,61 +1200,32 @@ def _upsert_canvas_page_resource(
     )
 
     # 1) Download any files embedded/linked in the page HTML (common for PDF viewers).
-    embedded_resources: list[Resource] = []
     file_ids = extract_canvas_file_ids_from_html(body)
-    for idx, file_id in enumerate(file_ids[:8]):
-        key = str(file_id)
-        if seen_file_ids is not None and key in seen_file_ids:
-            existing_file = (
-                db.execute(
-                    select(Resource).where(
-                        Resource.user_id == user.id,
-                        Resource.source_type == "canvas_file",
-                        Resource.source_ref == key,
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if existing_file:
-                _apply_canvas_module_meta(
-                    existing_file, module_name=module_name, module_position=module_position
-                )
-                db.add(existing_file)
-                embedded_resources.append(existing_file)
-            continue
-        try:
-            canvas_file = client.get_file(file_id)
-        except CanvasAPIError:
-            continue
-        # Prefer page title for the primary embed so "Week 2 Narrative" names the PDF.
-        override = page_title if idx == 0 else None
-        try:
-            res = _upsert_canvas_file_resource(
-                db,
-                redis=redis,
-                user=user,
-                course=course,
-                client=client,
-                canvas_file=canvas_file,
-                title_override=override,
-            )
-        except Exception:  # noqa: BLE001
-            continue
-        if res:
-            if seen_file_ids is not None:
-                seen_file_ids.add(key)
-            _apply_canvas_module_meta(res, module_name=module_name, module_position=module_position)
-            db.add(res)
-            embedded_resources.append(res)
+    embedded_resources = _upsert_files_from_html(
+        db,
+        redis=redis,
+        user=user,
+        course=course,
+        client=client,
+        html=body,
+        title_override=page_title,
+        module_name=module_name,
+        module_position=module_position,
+        module_id=None,
+        module_item=module_item,
+        seen_file_ids=seen_file_ids,
+    )
 
     text = _strip_html(body)
-    thin = _is_thin_page_text(text)
-    # Prefer one Canvas-like item: PDF-wrapper pages should not also create page.txt.
-    embed_only = bool(embedded_resources) and (thin or len(text.strip()) < 280)
-
-    if embed_only:
-        primary = embedded_resources[0]
+    # Always prefer real PDF/file bytes when the page embeds them — never keep page.txt
+    # alongside (or instead of) the duplicate of the module PDF.
+    if embedded_resources:
+        pdfs = [
+            r
+            for r in embedded_resources
+            if "pdf" in (r.mime_type or "").lower() or (r.original_filename or "").lower().endswith(".pdf")
+        ]
+        primary = (pdfs or embedded_resources)[0]
         _apply_canvas_module_meta(primary, module_name=module_name, module_position=module_position)
         db.add(primary)
         if existing is not None and existing.id != primary.id:
@@ -1268,12 +1247,7 @@ def _upsert_canvas_page_resource(
         return primary
 
     if not text:
-        if not embedded_resources:
-            return None
-        primary = embedded_resources[0]
-        _apply_canvas_module_meta(primary, module_name=module_name, module_position=module_position)
-        db.add(primary)
-        return primary
+        return None
 
     data = text.encode("utf-8")
     content_hash = hashlib.sha256(data).hexdigest()
@@ -1706,12 +1680,14 @@ def sync_canvas(db: Session, *, user: User, redis: Redis) -> CanvasSyncResult:
                                         redis=redis,
                                         user=user,
                                         course=course,
+                                        client=client,
                                         course_id=course_id,
                                         module_item=item,
                                         module_name=module_name,
                                         module_position=module_position,
                                         module_id=module_id,
                                         assignment=asg,
+                                        seen_file_ids=seen_file_ids,
                                     )
                                     if item_res:
                                         files_upserted += 1
@@ -1722,6 +1698,23 @@ def sync_canvas(db: Session, *, user: User, redis: Redis) -> CanvasSyncResult:
                         errors.append(f"modules course={course_id}: {exc}")
 
                 try:
+                    # Remove leftover assignment/quiz text stubs from older syncs.
+                    stale_text = (
+                        db.execute(
+                            select(Resource).where(
+                                Resource.user_id == user.id,
+                                Resource.course_id == course.id,
+                                Resource.source_type == "canvas_module_item",
+                                Resource.mime_type == "text/plain",
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    for stub in stale_text:
+                        db.delete(stub)
+                    if stale_text:
+                        db.flush()
                     _dedupe_course_resources_by_content(db, user=user, course_id=course.id)
                     _dedupe_course_resources_by_module_item(db, user=user, course_id=course.id)
                 except Exception as exc:  # noqa: BLE001

@@ -70,16 +70,19 @@ function resourceKind(r: Resource): "page" | "pdf" | "image" | "assignment" | "l
     string,
     unknown
   >;
-  const itemType = String(meta.canvas_module_item_type || "").toLowerCase();
-  if (itemType === "assignment" || itemType === "quiz") return "assignment";
-  if (itemType === "externalurl" || itemType === "externaltool" || r.resource_type === "link") return "link";
   const mime = (r.mime_type || "").toLowerCase();
   const title = (r.title || "").toLowerCase();
   const type = (r.resource_type || "").toLowerCase();
-  if (type === "page" || r.source_type === "canvas_page") return "page";
-  if (type === "assignment" || /assignment|exit ticket|homework/i.test(title)) return "assignment";
-  if (mime.includes("pdf") || title.endsWith(".pdf")) return "pdf";
+  // Prefer real file type over Canvas item labels (PDF-wrapper pages/assignments).
+  if (mime.includes("pdf") || title.endsWith(".pdf") || (r.original_filename || "").toLowerCase().endsWith(".pdf")) {
+    return "pdf";
+  }
   if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic)$/i.test(title)) return "image";
+  const itemType = String(meta.canvas_module_item_type || "").toLowerCase();
+  if (itemType === "assignment" || itemType === "quiz") return "assignment";
+  if (itemType === "externalurl" || itemType === "externaltool" || r.resource_type === "link") return "link";
+  if (type === "page" || (r.source_type === "canvas_page" && mime.startsWith("text/"))) return "page";
+  if (type === "assignment" || /assignment|exit ticket|homework/i.test(title)) return "assignment";
   return "file";
 }
 
