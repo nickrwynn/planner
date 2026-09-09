@@ -5,6 +5,10 @@ import Capacitor
 
 /// Opens an in-app Canvas login WebView, waits for NetID/Duo, then reads the
 /// HttpOnly `canvas_session` cookie and returns it to JS.
+///
+/// Important: Canvas often sets an anonymous `canvas_session` on the login page
+/// before the user authenticates. We only succeed after `/api/v1/users/self`
+/// accepts the cookie.
 @objc(CanvasLoginPlugin)
 public class CanvasLoginPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "CanvasLoginPlugin"
@@ -63,6 +67,8 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
     private var webView: WKWebView!
     private var pollTimer: Timer?
     private var finished = false
+    private var verifying = false
+    private var lastRejectedCookie: String?
     private var statusLabel: UILabel!
 
     init(baseURL: URL, completion: @escaping (CanvasLoginResult) -> Void) {
@@ -88,7 +94,7 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
         )
 
         statusLabel = UILabel()
-        statusLabel.text = "Log in with NetID / Duo. We’ll connect automatically when Canvas is ready."
+        statusLabel.text = "Log in with NetID / Duo. Keep this open until Canvas finishes — we’ll connect automatically."
         statusLabel.font = .preferredFont(forTextStyle: .footnote)
         statusLabel.textColor = .secondaryLabel
         statusLabel.numberOfLines = 0
@@ -117,11 +123,12 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
+        // Landing on /login is fine; SAML/CAS/Duo may leave this host temporarily.
         let loginURL = baseURL.appendingPathComponent("login")
         webView.load(URLRequest(url: loginURL))
 
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.checkForSessionCookie()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.25, repeats: true) { [weak self] _ in
+            self?.checkForAuthenticatedSession()
         }
     }
 
@@ -143,17 +150,59 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
         }
     }
 
-    private func checkForSessionCookie() {
+    private func checkForAuthenticatedSession() {
+        guard !finished, !verifying else { return }
+
         dataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self, !self.finished else { return }
+            guard let self, !self.finished, !self.verifying else { return }
             guard let cookie = cookies.first(where: { self.isCanvasSessionCookie($0) }) else { return }
             let value = cookie.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.isEmpty else { return }
+            // Skip cookies we already proved are anonymous / invalid.
+            if value == self.lastRejectedCookie { return }
+
+            self.verifying = true
             DispatchQueue.main.async {
-                self.statusLabel.text = "Signed in — connecting StudyFlows…"
-                self.finish(.success(value))
+                self.statusLabel.text = "Checking Canvas login…"
+            }
+
+            self.verifyCanvasUser(sessionCookie: value) { ok in
+                DispatchQueue.main.async {
+                    self.verifying = false
+                    guard !self.finished else { return }
+                    if ok {
+                        self.statusLabel.text = "Signed in — connecting StudyFlows…"
+                        self.finish(.success(value))
+                    } else {
+                        self.lastRejectedCookie = value
+                        self.statusLabel.text = "Waiting for NetID / Duo… finish login in the page below."
+                    }
+                }
             }
         }
+    }
+
+    private func verifyCanvasUser(sessionCookie: String, completion: @escaping (Bool) -> Void) {
+        let url = baseURL.appendingPathComponent("api/v1/users/self")
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("canvas_session=\(sessionCookie)", forHTTPHeaderField: "Cookie")
+
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data else {
+                completion(false)
+                return
+            }
+            guard
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                json["id"] != nil
+            else {
+                completion(false)
+                return
+            }
+            completion(true)
+        }.resume()
     }
 
     private func isCanvasSessionCookie(_ cookie: HTTPCookie) -> Bool {
@@ -165,11 +214,14 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        checkForSessionCookie()
+        checkForAuthenticatedSession()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        // Keep the sheet open for Duo / network blips; only fail hard on cancel.
+        statusLabel.text = "Still loading… If Duo prompts, complete it here."
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         statusLabel.text = "Still loading… If Duo prompts, complete it here."
     }
 }
