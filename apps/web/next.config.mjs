@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === "production";
-const scriptSrc = isProd ? "'self'" : "'self' 'unsafe-inline' 'unsafe-eval'";
+// Next.js App Router ships inline bootstrap/flight scripts. Without a nonce these
+// need 'unsafe-inline', otherwise the client never hydrates and no button works.
+const scriptSrc = isProd ? "'self' 'unsafe-inline'" : "'self' 'unsafe-inline' 'unsafe-eval'";
 // Same-origin `/backend/*` proxy (PWA/homescreen tunnels) + local API fallbacks.
 const connectSrc = isProd
   ? "'self' http://localhost:8000 http://api:8000 https:"

@@ -44,6 +44,7 @@ services:
       AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-}
       AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-}
+      SEED_DEV_PASSWORD: ${SEED_DEV_PASSWORD:-}
       INTEGRATIONS_SECRET: ${INTEGRATIONS_SECRET:-}
       CANVAS_OAUTH_CLIENT_ID: ${CANVAS_OAUTH_CLIENT_ID:-}
       CANVAS_OAUTH_CLIENT_SECRET: ${CANVAS_OAUTH_CLIENT_SECRET:-}
@@ -111,6 +112,9 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/backend}
+        NEXT_PUBLIC_API_AUTH_MODE: ${NEXT_PUBLIC_API_AUTH_MODE:-bearer}
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL}
@@ -127,7 +131,8 @@ services:
       - -c
       - |
         if [ "$APP_RUNTIME_PROFILE" = "prod" ]; then
-          pnpm exec next build && exec pnpm exec next start -H 0.0.0.0 -p 3000;
+          # Image already ran `next build` with NEXT_PUBLIC_* bake-in; do not rebuild at start.
+          exec pnpm exec next start -H 0.0.0.0 -p 3000;
         fi
         exec pnpm exec next dev -H 0.0.0.0 -p 3000
     volumes:

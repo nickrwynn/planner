@@ -1,13 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { toErrorMessage } from "../../lib/api";
+import { FormEvent, useState } from "react";
 import { setAuthSession, type AuthUser } from "../../lib/auth";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-
-type Mode = "login" | "register";
 
 type AuthResponse = {
   access_token: string;
@@ -15,51 +9,88 @@ type AuthResponse = {
   user: AuthUser;
 };
 
+function apiBase(): string {
+  const configured = (process.env.NEXT_PUBLIC_API_BASE_URL || "").trim();
+  if (configured.startsWith("http://") || configured.startsWith("https://")) return configured;
+  if (typeof window !== "undefined") {
+    const path = configured || "/backend";
+    return `${window.location.origin}${path.startsWith("/") ? path : `/${path}`}`;
+  }
+  return configured || "http://localhost:8000";
+}
+
+async function postAuth(path: string, body: Record<string, string>): Promise<AuthResponse> {
+  const res = await fetch(`${apiBase()}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let detail = `${res.status} ${res.statusText}`;
+  let data: AuthResponse | null = null;
+  try {
+    const j = await res.json();
+    if (!res.ok) {
+      if (typeof j?.detail === "string") detail = j.detail;
+      throw new Error(detail);
+    }
+    data = j as AuthResponse;
+  } catch (err) {
+    if (!res.ok) throw err instanceof Error ? err : new Error(detail);
+    throw err;
+  }
+  if (!data?.access_token) throw new Error("No access token returned");
+  return data;
+}
+
+/**
+ * Two independent forms — no tab state. Sign in and Create account both always work.
+ */
 export default function LoginForm() {
-  const router = useRouter();
-  const params = useSearchParams();
-  const nextPath = useMemo(() => {
-    const n = params.get("next") || "/";
-    return n.startsWith("/") ? n : "/";
-  }, [params]);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [regBusy, setRegBusy] = useState(false);
 
-  const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function onSubmit(e: FormEvent) {
+  async function onSignIn(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
+    setLoginBusy(true);
+    setLoginError(null);
     try {
-      const path = mode === "login" ? "/auth/login" : "/auth/register";
-      const body: Record<string, string> = { email: email.trim(), password };
-      if (mode === "register" && name.trim()) body.name = name.trim();
-      const res = await fetch(`${API_BASE}${path}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      const data = await postAuth("/auth/login", {
+        email: loginEmail.trim(),
+        password: loginPassword,
       });
-      if (!res.ok) {
-        let detail = `${res.status} ${res.statusText}`;
-        try {
-          const j = (await res.json()) as { detail?: string };
-          if (j.detail) detail = j.detail;
-        } catch {
-          // ignore
-        }
-        throw new Error(detail);
-      }
-      const data = (await res.json()) as AuthResponse;
       setAuthSession(data.access_token, data.user);
-      router.replace(nextPath);
+      window.location.href = "/";
     } catch (err) {
-      setError(toErrorMessage(err));
+      setLoginError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
-      setBusy(false);
+      setLoginBusy(false);
+    }
+  }
+
+  async function onRegister(e: FormEvent) {
+    e.preventDefault();
+    setRegBusy(true);
+    setRegError(null);
+    try {
+      const body: Record<string, string> = {
+        email: regEmail.trim(),
+        password: regPassword,
+      };
+      if (regName.trim()) body.name = regName.trim();
+      const data = await postAuth("/auth/register", body);
+      setAuthSession(data.access_token, data.user);
+      window.location.href = "/";
+    } catch (err) {
+      setRegError(err instanceof Error ? err.message : "Create account failed");
+    } finally {
+      setRegBusy(false);
     }
   }
 
@@ -67,41 +98,60 @@ export default function LoginForm() {
     <main className="authPage">
       <div className="authCard">
         <h1>StudyFlows</h1>
-        <p className="authLead">
-          {mode === "login"
-            ? "Sign in to your account. Each person has their own Canvas and courses."
-            : "Create an account. New testers start empty — connect your own Canvas after sign-up."}
-        </p>
-        <div className="authTabs" role="tablist">
-          <button
-            type="button"
-            className={mode === "login" ? "isActive" : undefined}
-            onClick={() => setMode("login")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={mode === "register" ? "isActive" : undefined}
-            onClick={() => setMode("register")}
-          >
-            Create account
-          </button>
-        </div>
-        <form className="authForm" onSubmit={onSubmit}>
-          {mode === "register" ? (
-            <label>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-            </label>
-          ) : null}
+        <p className="authLead">Sign in or create an account. Each person has their own Canvas and courses.</p>
+
+        <form className="authForm" onSubmit={onSignIn}>
+          <h2 className="authSectionTitle">Sign in</h2>
           <label>
             Email
             <input
               type="email"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              name="login_email"
+              value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)}
+              autoComplete="username"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              required
+              minLength={8}
+              name="login_password"
+              value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+          {loginError ? <div className="authError">{loginError}</div> : null}
+          <button type="submit" disabled={loginBusy}>
+            {loginBusy ? "Please wait…" : "Sign in"}
+          </button>
+        </form>
+
+        <hr className="authDivider" />
+
+        <form className="authForm" onSubmit={onRegister}>
+          <h2 className="authSectionTitle">Create account</h2>
+          <label>
+            Name
+            <input
+              name="reg_name"
+              value={regName}
+              onChange={(e) => setRegName(e.target.value)}
+              autoComplete="name"
+            />
+          </label>
+          <label>
+            Email
+            <input
+              type="email"
+              required
+              name="reg_email"
+              value={regEmail}
+              onChange={(e) => setRegEmail(e.target.value)}
               autoComplete="email"
             />
           </label>
@@ -111,22 +161,17 @@ export default function LoginForm() {
               type="password"
               required
               minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
+              name="reg_password"
+              value={regPassword}
+              onChange={(e) => setRegPassword(e.target.value)}
+              autoComplete="new-password"
             />
           </label>
-          {error ? <div className="authError">{error}</div> : null}
-          <button type="submit" disabled={busy}>
-            {busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
+          {regError ? <div className="authError">{regError}</div> : null}
+          <button type="submit" disabled={regBusy}>
+            {regBusy ? "Please wait…" : "Create account"}
           </button>
         </form>
-        {mode === "register" ? (
-          <p className="authHint">
-            Already the original beta owner? Create account with <code>dev@example.com</code> once to claim
-            your existing Canvas data, then sign in.
-          </p>
-        ) : null}
       </div>
     </main>
   );
