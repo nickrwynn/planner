@@ -141,7 +141,6 @@ export function SmartTextArea({
         onKeyDown={onKeyDown}
         onClick={clearSuggestion}
         onBlur={() => {
-          clearSuggestion();
           learnFromText(value);
         }}
         onChange={(e) => {
@@ -151,9 +150,15 @@ export function SmartTextArea({
         }}
       />
       {suggestion ? (
-        <div className="smartTextHint">
-          Tab to accept · {source === "cloud" ? "cloud assist" : "on-device"}
-        </div>
+        <button
+          type="button"
+          className="smartTextHint"
+          // Keep focus in the textarea so accepting does not dismiss the keyboard.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={accept}
+        >
+          Accept “{suggestion.trim()}” · {source === "cloud" ? "cloud assist" : "on-device"}
+        </button>
       ) : null}
     </div>
   );

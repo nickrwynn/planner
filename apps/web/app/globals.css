@@ -1465,3 +1465,13 @@ html.agentCollapsed .appShell {
   font-size: 11px;
   color: var(--muted, #6b7280);
 }
+
+.smartTextHint {
+  display: inline-block;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 999px;
+  background: var(--panel, #fff);
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+}
