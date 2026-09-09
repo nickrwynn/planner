@@ -19,12 +19,11 @@ type PdfReaderProps = {
   onClearSelect?: () => void;
 };
 
-const HOLD_TO_START_MS = 450;
-const HOLD_FOR_MENU_MS = 450;
-const MOVE_CANCEL_PX = 12;
-const DRAG_ENGAGE_PX = 8;
+const HOLD_TO_START_MS = 350;
+const HOLD_FOR_MENU_MS = 400;
+const MOVE_CANCEL_PX = 28;
 
-function caretRangeFromPoint(x: number, y: number): Range | null {
+function nativeCaretRange(x: number, y: number): Range | null {
   const doc = document as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
     caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
@@ -32,8 +31,18 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
   if (typeof doc.caretRangeFromPoint === "function") {
     const range = doc.caretRangeFromPoint(x, y);
     if (!range) return null;
-    if (range.startContainer.nodeType !== Node.TEXT_NODE) return null;
-    return range;
+    if (range.startContainer.nodeType === Node.TEXT_NODE) return range;
+    // PDF spans sometimes return the element — walk into its text.
+    const el = range.startContainer as Element;
+    const text = el.nodeType === Node.ELEMENT_NODE ? el.childNodes[0] : null;
+    if (text && text.nodeType === Node.TEXT_NODE) {
+      const next = document.createRange();
+      const len = text.textContent?.length ?? 0;
+      next.setStart(text, Math.min(range.startOffset, len));
+      next.collapse(true);
+      return next;
+    }
+    return null;
   }
   const pos = doc.caretPositionFromPoint?.(x, y);
   if (!pos || pos.offsetNode.nodeType !== Node.TEXT_NODE) return null;
@@ -43,9 +52,88 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
   return range;
 }
 
+/** Binary-search character offset inside a text node for an x position on one line. */
+function offsetForXInTextNode(textNode: Node, x: number, y: number): number {
+  const text = textNode.textContent || "";
+  if (!text.length) return 0;
+  let lo = 0;
+  let hi = text.length;
+  const probe = document.createRange();
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    probe.setStart(textNode, mid);
+    probe.setEnd(textNode, Math.min(mid + 1, text.length));
+    const rect = probe.getBoundingClientRect();
+    if (!rect.width && !rect.height) {
+      hi = mid;
+      continue;
+    }
+    // Prefer the glyph whose vertical band contains y when possible.
+    const midX = rect.left + rect.width / 2;
+    if (x > midX) lo = mid + 1;
+    else hi = mid;
+  }
+  // Nudge: if we're past the last glyph center, clamp to end.
+  if (lo >= text.length) return text.length;
+  probe.setStart(textNode, lo);
+  probe.setEnd(textNode, Math.min(lo + 1, text.length));
+  const r = probe.getBoundingClientRect();
+  if (r.width && x > r.left + r.width * 0.65) {
+    return Math.min(lo + 1, text.length);
+  }
+  void y;
+  return lo;
+}
+
+/**
+ * Robust caret for pdf.js text layers: native caret, then nearby probes,
+ * then nearest span by geometry (gaps between glyphs kill caretRangeFromPoint).
+ */
+function caretInTextLayer(x: number, y: number, root: HTMLElement | null): Range | null {
+  const probes: Array<[number, number]> = [
+    [x, y],
+    [x, y - 6],
+    [x, y + 6],
+    [x - 8, y],
+    [x + 8, y],
+    [x - 14, y],
+    [x + 14, y],
+    [x, y - 14],
+    [x, y + 14],
+  ];
+  for (const [px, py] of probes) {
+    const hit = nativeCaretRange(px, py);
+    if (!hit) continue;
+    if (root && !root.contains(hit.startContainer)) continue;
+    return hit;
+  }
+  if (!root) return null;
+
+  let best: { dist: number; range: Range } | null = null;
+  const spans = root.querySelectorAll("span");
+  for (const span of spans) {
+    if (!span.firstChild || span.firstChild.nodeType !== Node.TEXT_NODE) continue;
+    const textNode = span.firstChild;
+    for (const rect of Array.from(span.getClientRects())) {
+      if (rect.width < 1 && rect.height < 1) continue;
+      const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+      const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0;
+      const dist = Math.hypot(dx, dy);
+      if (dist > 64) continue;
+      const clampedX = Math.min(Math.max(x, rect.left), rect.right);
+      const offset = offsetForXInTextNode(textNode, clampedX, y);
+      const range = document.createRange();
+      range.setStart(textNode, offset);
+      range.collapse(true);
+      if (!best || dist < best.dist) best = { dist, range };
+    }
+  }
+  return best?.range ?? null;
+}
+
 function pointInClientRects(x: number, y: number, rects: DOMRectList | DOMRect[]): boolean {
   for (const rect of Array.from(rects)) {
-    if (x >= rect.left - 4 && x <= rect.right + 4 && y >= rect.top - 4 && y <= rect.bottom + 4) {
+    if (x >= rect.left - 6 && x <= rect.right + 6 && y >= rect.top - 6 && y <= rect.bottom + 6) {
       return true;
     }
   }
@@ -79,8 +167,9 @@ export function PdfReader({
   const selectedRangeRef = useRef<Range | null>(null);
   const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
   const holdTimerRef = useRef<number | null>(null);
-  const lastGoodEndRef = useRef<Range | null>(null);
   const activePointerRef = useRef<number | null>(null);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const onTextSelectRef = useRef(onTextSelect);
   const onClearSelectRef = useRef(onClearSelect);
@@ -132,8 +221,8 @@ export function PdfReader({
     const pageRect = pageEl.getBoundingClientRect();
     caret.style.display = "block";
     caret.style.left = `${clientX - pageRect.left}px`;
-    caret.style.top = `${clientY - pageRect.top - 10}px`;
-    caret.style.height = "22px";
+    caret.style.top = `${clientY - pageRect.top - 12}px`;
+    caret.style.height = "24px";
   }
 
   function clearSelectionHighlight() {
@@ -154,9 +243,7 @@ export function PdfReader({
     if (!active || active.collapsed) return;
     const pageRect = pageEl.getBoundingClientRect();
     for (const rect of Array.from(active.getClientRects())) {
-      if (rect.width < 1 || rect.height < 1) continue;
-      // Ignore absurd full-page rects from bad ranges.
-      if (rect.width > pageRect.width * 0.98 && rect.height > pageRect.height * 0.5) continue;
+      if (rect.width < 0.5 || rect.height < 0.5) continue;
       const mark = document.createElement("div");
       mark.className = "pdfSelMark";
       mark.style.left = `${rect.left - pageRect.left}px`;
@@ -169,15 +256,19 @@ export function PdfReader({
 
   function resetSelectionUi() {
     clearHoldTimer();
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
     modeRef.current = "idle";
     anchorRangeRef.current = null;
     selectedRangeRef.current = null;
-    lastGoodEndRef.current = null;
     pressOriginRef.current = null;
     activePointerRef.current = null;
+    lastPointRef.current = null;
     hideCaret();
     clearSelectionHighlight();
-    textLayerRef.current?.classList.remove("isSelecting", "isExtendArmed", "hasSelection");
+    textLayerRef.current?.classList.remove("isSelecting", "hasSelection");
     window.getSelection()?.removeAllRanges();
   }
 
@@ -242,7 +333,7 @@ export function PdfReader({
       renderTask?.cancel();
       textLayer?.cancel();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset helpers are stable via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, page, scale]);
 
   useEffect(() => {
@@ -257,12 +348,11 @@ export function PdfReader({
   }, [highlightQuery, page, rendering]);
 
   function beginSelectAt(clientX: number, clientY: number, pointerId: number) {
-    const caret = caretRangeFromPoint(clientX, clientY);
+    const caret = caretInTextLayer(clientX, clientY, textLayerRef.current);
     if (!caret) return false;
     const anchor = caret.cloneRange();
     anchor.collapse(true);
     anchorRangeRef.current = anchor;
-    lastGoodEndRef.current = anchor.cloneRange();
     selectedRangeRef.current = null;
     const selection = window.getSelection();
     selection?.removeAllRanges();
@@ -283,11 +373,8 @@ export function PdfReader({
   function applyRangeFromAnchorToPoint(clientX: number, clientY: number) {
     const anchor = anchorRangeRef.current;
     if (!anchor) return;
-    const caret = caretRangeFromPoint(clientX, clientY);
-    if (!caret) {
-      // Keep last good end — don't jump to a bogus full-page range.
-      return;
-    }
+    const caret = caretInTextLayer(clientX, clientY, textLayerRef.current);
+    if (!caret) return;
     const selection = window.getSelection();
     if (!selection) return;
     try {
@@ -300,35 +387,29 @@ export function PdfReader({
         next.setStart(caret.startContainer, caret.startOffset);
         next.setEnd(anchor.startContainer, anchor.startOffset);
       }
-      if (next.collapsed) {
-        selection.removeAllRanges();
-        selection.addRange(next);
-        paintSelectionHighlight(next);
-        return;
-      }
-      const text = next.toString();
-      // Guard against accidental whole-page grabs from bad caret hits.
-      if (text.length > 4000) return;
-      const rects = next.getClientRects();
-      const pageEl = stageRef.current?.querySelector(".studyPdfPage") as HTMLElement | null;
-      if (pageEl && rects.length) {
-        const pageRect = pageEl.getBoundingClientRect();
-        let covered = 0;
-        for (const r of Array.from(rects)) covered += r.width * r.height;
-        if (covered > pageRect.width * pageRect.height * 0.65) return;
-      }
-      lastGoodEndRef.current = caret.cloneRange();
       selection.removeAllRanges();
       selection.addRange(next);
       selectedRangeRef.current = next.cloneRange();
       paintSelectionHighlight(next);
-      hideCaret();
+      if (!next.collapsed) hideCaret();
     } catch {
       // ignore invalid boundary combos while dragging across nodes
     }
   }
 
+  function scheduleSelectUpdate(clientX: number, clientY: number) {
+    lastPointRef.current = { x: clientX, y: clientY };
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      const pt = lastPointRef.current;
+      if (!pt || modeRef.current !== "selecting") return;
+      applyRangeFromAnchorToPoint(pt.x, pt.y);
+    });
+  }
+
   function finalizeSelection(clientX: number, clientY: number) {
+    applyRangeFromAnchorToPoint(clientX, clientY);
     const sel = window.getSelection();
     const text = (selectedRangeRef.current?.toString() || sel?.toString() || "").trim();
     hideCaret();
@@ -345,7 +426,6 @@ export function PdfReader({
     modeRef.current = "selected";
     textLayerRef.current?.classList.add("hasSelection");
     paintSelectionHighlight(selectedRangeRef.current);
-    // Update selected text only — menu opens on a second long-press.
     onTextSelectRef.current?.({ text, x: clientX, y: clientY, showMenu: false });
   }
 
@@ -368,9 +448,9 @@ export function PdfReader({
       e.stopPropagation();
       activePointerRef.current = e.pointerId;
       pressOriginRef.current = { x: e.clientX, y: e.clientY };
+      lastPointRef.current = { x: e.clientX, y: e.clientY };
       clearHoldTimer();
 
-      // Long-press existing highlight → action menu.
       if (modeRef.current === "selected" && selectedRangeRef.current) {
         const rects = selectedRangeRef.current.getClientRects();
         if (pointInClientRects(e.clientX, e.clientY, rects)) {
@@ -382,28 +462,31 @@ export function PdfReader({
           }, HOLD_FOR_MENU_MS);
           return;
         }
-        // Tap outside clears selection.
         resetSelectionUi();
         onClearSelectRef.current?.();
       }
 
-      // Casual press: wait for hold before any selection starts.
       modeRef.current = "press";
       holdTimerRef.current = window.setTimeout(() => {
         holdTimerRef.current = null;
         const origin = pressOriginRef.current;
         if (!origin || activePointerRef.current !== e.pointerId) return;
-        beginSelectAt(origin.x, origin.y, e.pointerId);
+        if (!beginSelectAt(origin.x, origin.y, e.pointerId)) {
+          // Retry at latest finger position (may have drifted slightly during hold).
+          const latest = lastPointRef.current || origin;
+          beginSelectAt(latest.x, latest.y, e.pointerId);
+        }
       }, HOLD_TO_START_MS);
     };
 
     const onPointerMove = (e: PointerEvent) => {
       if (activePointerRef.current !== e.pointerId) return;
+      lastPointRef.current = { x: e.clientX, y: e.clientY };
       const origin = pressOriginRef.current;
       const dist = origin ? Math.hypot(e.clientX - origin.x, e.clientY - origin.y) : 0;
 
       if (modeRef.current === "press") {
-        // Finger moved before hold completed → cancel (let the user scroll/pan).
+        // Only cancel hold if this looks like a scroll, not a tiny tremor.
         if (dist > MOVE_CANCEL_PX) {
           clearHoldTimer();
           modeRef.current = "idle";
@@ -422,9 +505,7 @@ export function PdfReader({
 
       if (modeRef.current === "selecting") {
         e.preventDefault();
-        if (dist >= DRAG_ENGAGE_PX) {
-          applyRangeFromAnchorToPoint(e.clientX, e.clientY);
-        }
+        scheduleSelectUpdate(e.clientX, e.clientY);
       }
     };
 
@@ -434,7 +515,6 @@ export function PdfReader({
 
       if (modeRef.current === "selecting") {
         e.preventDefault();
-        applyRangeFromAnchorToPoint(e.clientX, e.clientY);
         finalizeSelection(e.clientX, e.clientY);
         activePointerRef.current = null;
         pressOriginRef.current = null;
@@ -447,7 +527,6 @@ export function PdfReader({
       }
 
       if (modeRef.current === "menu_press") {
-        // Released before menu hold finished — keep selection, no menu.
         modeRef.current = "selected";
         activePointerRef.current = null;
         pressOriginRef.current = null;
@@ -455,7 +534,6 @@ export function PdfReader({
       }
 
       if (modeRef.current === "press") {
-        // Short tap — do nothing (no accidental highlight).
         modeRef.current = "idle";
         activePointerRef.current = null;
         pressOriginRef.current = null;
@@ -466,26 +544,24 @@ export function PdfReader({
       pressOriginRef.current = null;
     };
 
-    const onContextMenu = (e: Event) => {
-      e.preventDefault();
-    };
-
+    const block = (ev: Event) => ev.preventDefault();
     const opts: AddEventListenerOptions = { capture: true, passive: false };
     stage.addEventListener("pointerdown", onPointerDown, opts);
     stage.addEventListener("pointermove", onPointerMove, opts);
     stage.addEventListener("pointerup", onPointerUp, opts);
     stage.addEventListener("pointercancel", onPointerUp, opts);
-    stage.addEventListener("contextmenu", onContextMenu, opts);
-    stage.addEventListener("selectstart", onContextMenu, opts);
+    stage.addEventListener("contextmenu", block, opts);
+    stage.addEventListener("selectstart", block, opts);
 
     return () => {
       clearHoldTimer();
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       stage.removeEventListener("pointerdown", onPointerDown, opts);
       stage.removeEventListener("pointermove", onPointerMove, opts);
       stage.removeEventListener("pointerup", onPointerUp, opts);
       stage.removeEventListener("pointercancel", onPointerUp, opts);
-      stage.removeEventListener("contextmenu", onContextMenu, opts);
-      stage.removeEventListener("selectstart", onContextMenu, opts);
+      stage.removeEventListener("contextmenu", block, opts);
+      stage.removeEventListener("selectstart", block, opts);
     };
   }, []);
 
@@ -507,7 +583,7 @@ export function PdfReader({
         <div ref={textLayerRef} className="textLayer" />
       </div>
       <div className="pdfSelectHint">
-        Hold to place the start · drag to select · hold the highlight for actions
+        Hold to place start · drag across text · hold the highlight for actions
       </div>
     </div>
   );

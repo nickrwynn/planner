@@ -85,11 +85,79 @@ export function previousDueForRule(rule: DueScheduleRule, from: Date = new Date(
   return d;
 }
 
+/**
+ * Nth weekly occurrence for a rule.
+ * index 0 = next (or previous) due; 1 = one week further in that direction, etc.
+ */
+export function dueOccurrenceForRule(
+  rule: DueScheduleRule,
+  index: number,
+  mode: "next" | "previous" = "next",
+  from: Date = new Date()
+): Date {
+  const n = Math.max(0, Math.floor(index));
+  const base = mode === "next" ? nextDueForRule(rule, from) : previousDueForRule(rule, from);
+  const d = new Date(base);
+  d.setDate(d.getDate() + (mode === "next" ? n : -n) * 7);
+  return d;
+}
+
+/** Sort HW 1, HW 2, HW 10… in assignment order (not lexicographic). */
+export function compareTasksForSchedule(
+  a: { title: string; created_at?: string | null },
+  b: { title: string; created_at?: string | null }
+): number {
+  const chunks = (s: string) =>
+    s
+      .toLowerCase()
+      .split(/(\d+)/)
+      .filter(Boolean)
+      .map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  const ac = chunks(a.title || "");
+  const bc = chunks(b.title || "");
+  const len = Math.max(ac.length, bc.length);
+  for (let i = 0; i < len; i += 1) {
+    const x = ac[i];
+    const y = bc[i];
+    if (x == null) return -1;
+    if (y == null) return 1;
+    if (typeof x === "number" && typeof y === "number") {
+      if (x !== y) return x - y;
+      continue;
+    }
+    const xs = String(x);
+    const ys = String(y);
+    if (xs !== ys) return xs < ys ? -1 : 1;
+  }
+  const at = a.created_at ? Date.parse(a.created_at) : 0;
+  const bt = b.created_at ? Date.parse(b.created_at) : 0;
+  return at - bt;
+}
+
 export function matchingRuleForTask(
   task: { title: string; task_type?: string | null },
   rules: DueScheduleRule[]
 ): DueScheduleRule | null {
-  return rules.find((r) => taskMatchesDueRule(task, r)) || null;
+  // Prefer the most specific enabled rule (longest title filter), then first match.
+  const matches = rules.filter((r) => taskMatchesDueRule(task, r));
+  if (!matches.length) return null;
+  return [...matches].sort(
+    (a, b) => (b.title_contains.trim().length || 0) - (a.title_contains.trim().length || 0)
+  )[0];
+}
+
+/** Build staggered weekly due dates for tasks that match a rule (index 0 = base week). */
+export function planDueDatesForTasks<T extends { title: string; task_type?: string | null; created_at?: string | null }>(
+  tasks: T[],
+  rule: DueScheduleRule,
+  mode: "next" | "previous" = "next",
+  from: Date = new Date()
+): Array<{ task: T; due: Date }> {
+  const sorted = [...tasks].sort(compareTasksForSchedule);
+  return sorted.map((task, index) => ({
+    task,
+    due: dueOccurrenceForRule(rule, index, mode, from),
+  }));
 }
 
 export function parseProblemsText(text: string): string[] {

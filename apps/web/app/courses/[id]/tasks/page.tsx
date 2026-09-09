@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ContentState, EmptyState, ErrorState, LoadingState } from "../../../../components/async-state";
 import { apiDelete, apiGet, apiPatch, apiPost, toErrorMessage } from "../../../../lib/api";
 import {
+  compareTasksForSchedule,
   matchingRuleForTask,
   nextDueForRule,
   parseProblemsText,
-  previousDueForRule,
+  planDueDatesForTasks,
   problemsToText,
   readDueRules,
   WEEKDAY_OPTIONS,
@@ -130,22 +131,55 @@ export default function CourseTasksPage({ params }: { params: { id: string } }) 
     await saveDueRules([...dueRules, rule]);
   }
 
-  async function applyDueSchedules(mode: "next" | "previous") {
+  async function applyDueSchedules(mode: "next" | "previous" = "next") {
     setBusy(true);
     setError(null);
     try {
-      let updatedCount = 0;
-      for (const task of tasks) {
-        if (task.status === "done" || task.due_at) continue;
+      // Always overwrite existing due dates. Stagger weekly by title order:
+      // HW1 → next Thursday, HW2 → the Thursday after, … (never one shared date).
+      const candidates = tasks.filter((task) => {
+        if (task.status === "done") return false;
+        return !!matchingRuleForTask(task, dueRules);
+      });
+      const byRule = new Map<string, { rule: DueScheduleRule; tasks: Task[] }>();
+      for (const task of candidates) {
         const rule = matchingRuleForTask(task, dueRules);
         if (!rule) continue;
-        const due = mode === "next" ? nextDueForRule(rule) : previousDueForRule(rule);
-        await apiPatch<Task>(`/tasks/${task.id}`, { due_at: due.toISOString() });
-        updatedCount += 1;
+        const bucket = byRule.get(rule.id) || { rule, tasks: [] };
+        bucket.tasks.push(task);
+        byRule.set(rule.id, bucket);
+      }
+
+      let updatedCount = 0;
+      const now = new Date();
+      const preview: string[] = [];
+      for (const { rule, tasks: matched } of byRule.values()) {
+        const planned = planDueDatesForTasks(matched, rule, mode, now);
+        for (const { task, due } of planned) {
+          await apiPatch<Task>(`/tasks/${task.id}`, { due_at: due.toISOString() });
+          updatedCount += 1;
+          if (preview.length < 6) {
+            preview.push(
+              `${task.title.slice(0, 40)} → ${due.toLocaleString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })}`
+            );
+          }
+        }
       }
       await refresh();
       if (!updatedCount) {
-        setError("No open tasks without due dates matched your schedules.");
+        setError("No open tasks matched your schedules.");
+      } else {
+        window.alert(
+          `Updated ${updatedCount} task${updatedCount === 1 ? "" : "s"} (overwrote prior due dates):\n\n${preview.join("\n")}${
+            updatedCount > preview.length ? `\n…and ${updatedCount - preview.length} more` : ""
+          }`
+        );
       }
     } catch (e) {
       setError(toErrorMessage(e));
@@ -261,9 +295,10 @@ export default function CourseTasksPage({ params }: { params: { id: string } }) 
 
       <div className="card">
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Repeating due schedules</div>
-        <p style={{ margin: "0 0 10px", fontSize: 13, color: "#555" }}>
-          Example: Assignment titles containing “HW” are due every Thursday at 11:59 PM. New matching tasks get the next
-          due date automatically; use Apply for existing ones missing dates.
+        <p style={{ margin: "0 0 10px", fontSize: 13, color: "var(--muted)" }}>
+          Example: titles containing “HW”, due every Thursday at 11:59 PM. Apply{" "}
+          <strong>overwrites</strong> existing due dates and staggers weekly (HW 1 → next Thursday, HW 2 → the week
+          after, …)—not the same date on every assignment.
         </p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
           <select value={ruleTaskType} onChange={(e) => setRuleTaskType(e.target.value)} style={{ padding: 8 }}>
@@ -324,8 +359,13 @@ export default function CourseTasksPage({ params }: { params: { id: string } }) 
           </ul>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          <button type="button" disabled={busy || !dueRules.length} onClick={() => void applyDueSchedules("next")} style={{ padding: "8px 12px" }}>
-            Apply next due to open tasks missing dates
+          <button
+            type="button"
+            disabled={busy || !dueRules.length}
+            onClick={() => void applyDueSchedules("next")}
+            style={{ padding: "8px 12px" }}
+          >
+            Apply weekly schedule (overwrite)
           </button>
           <button
             type="button"
@@ -333,7 +373,7 @@ export default function CourseTasksPage({ params }: { params: { id: string } }) 
             onClick={() => void applyDueSchedules("previous")}
             style={{ padding: "8px 12px" }}
           >
-            Apply previous due (e.g. last Thursday)
+            Apply previous weeks (overwrite)
           </button>
         </div>
       </div>
