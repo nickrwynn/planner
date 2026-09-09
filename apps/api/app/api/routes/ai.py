@@ -23,6 +23,8 @@ from app.schemas.ai import (
     AskRequest,
     AskResponse,
     Citation,
+    CompleteRequest,
+    CompleteResponse,
     ConversationRead,
     HandwritingRequest,
     HandwritingResponse,
@@ -314,6 +316,49 @@ def ai_status(user=Depends(get_current_user)):
             "Handwriting recognition runs on-device and does not need a key."
         ),
     )
+
+
+_COMPLETE_SYSTEM = (
+    "You continue a student's note in progress. Reply with ONLY the continuation text "
+    "that should follow immediately after the given text — no quotes, no preamble, no "
+    "restating what they wrote. Keep it to at most one short sentence (max 15 words). "
+    "Match their tone and terminology. If no sensible continuation exists, reply with "
+    "nothing at all."
+)
+
+
+@router.post("/complete", response_model=CompleteResponse)
+def complete(payload: CompleteRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
+    """Cloud backup for text completion; on-device handles the common case."""
+    if not is_llm_configured():
+        return CompleteResponse(completion="", provider=None)
+
+    start = time.perf_counter()
+    try:
+        llm = chat_completion(
+            system=_COMPLETE_SYSTEM,
+            user=payload.text,
+            grounding="general",
+        )
+    except Exception:
+        # Never surface a completion failure to the editor — just offer nothing.
+        return CompleteResponse(completion="", provider=None)
+
+    text = (llm.content or "").strip().strip('"')
+    # Guard against a chatty model returning a paragraph.
+    if len(text) > 160:
+        text = text[:160].rsplit(" ", 1)[0]
+
+    _record_ai_usage(
+        db,
+        user_id=user.id,
+        endpoint="/ai/complete",
+        status="ok",
+        provider=llm.provider,
+        model_name=llm.model_name,
+        metadata_json={"latency_ms": round((time.perf_counter() - start) * 1000, 2)},
+    )
+    return CompleteResponse(completion=text, provider=llm.provider)
 
 
 @router.post("/handwriting", response_model=HandwritingResponse)

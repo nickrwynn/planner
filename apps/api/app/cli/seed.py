@@ -13,16 +13,46 @@ from app.models.notebook import Notebook
 from app.models.resource import Resource
 from app.models.task import Task
 from app.models.user import User
+from app.services.auth_passwords import hash_password
+
+
+def _seed_password() -> str | None:
+    raw = (os.getenv("SEED_DEV_PASSWORD") or "").strip()
+    return raw or None
 
 
 def ensure_dev_user(db: Session) -> User:
+    password = _seed_password()
     user = db.execute(select(User).where(User.email == "dev@example.com")).scalars().first()
     if user:
+        # Local/demo: set a password when SEED_DEV_PASSWORD is provided and none exists yet.
+        if password and not user.password_hash:
+            user.password_hash = hash_password(password)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            print("Claimed seed user password from SEED_DEV_PASSWORD (dev@example.com).")
+        elif not user.password_hash:
+            print(
+                "Seed user exists without a password — use Create account on /login "
+                "with email dev@example.com, or set SEED_DEV_PASSWORD and re-run seed."
+            )
         return user
-    user = User(email="dev@example.com", name="Dev User")
+    user = User(
+        email="dev@example.com",
+        name="Dev User",
+        password_hash=hash_password(password) if password else None,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
+    if password:
+        print("Created seed user dev@example.com with SEED_DEV_PASSWORD.")
+    else:
+        print(
+            "Created seed user without password — claim via Create account on /login, "
+            "or set SEED_DEV_PASSWORD and re-run seed."
+        )
     return user
 
 

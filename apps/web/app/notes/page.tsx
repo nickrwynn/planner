@@ -5,6 +5,7 @@ import { ContentState, EmptyState, ErrorState, LoadingState } from "../../compon
 import { apiDelete, apiGet, apiPost, apiPatch, toErrorMessage } from "../../lib/api";
 import type { Notebook, NoteDocument, NotePage, Resource } from "../../lib/types";
 import { HandwritingCanvas, type InkElement } from "../../components/HandwritingCanvas";
+import { SmartTextArea } from "../../components/smart-textarea";
 
 export default function NotesPage() {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -337,15 +338,7 @@ export default function NotesPage() {
               </select>
               <div style={{ color: "#555", fontSize: 12 }}>id: {selectedPage.id}</div>
             </div>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={12}
-              spellCheck
-              autoCorrect="on"
-              autoCapitalize="sentences"
-              style={{ width: "100%", padding: 10, fontFamily: "inherit" }}
-            />
+            <SmartTextArea value={text} onChange={setText} rows={12} />
             <div style={{ height: 8 }} />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ fontWeight: 600, fontSize: 12 }}>Linked resource</div>

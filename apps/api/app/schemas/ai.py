@@ -50,6 +50,16 @@ class HandwritingResponse(BaseModel):
     model_name: str | None = None
 
 
+class CompleteRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+    course_id: UUID | None = None
+
+
+class CompleteResponse(BaseModel):
+    completion: str
+    provider: str | None = None
+
+
 class MessageRead(BaseModel):
     id: UUID
     user_id: UUID

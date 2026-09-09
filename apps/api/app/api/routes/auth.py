@@ -84,8 +84,18 @@ def register(payload: AuthCredentials, db: Session = Depends(get_db_from_request
 def login(payload: AuthCredentials, db: Session = Depends(get_db_from_request)):
     email = _normalize_email(payload.email)
     user = db.execute(select(User).where(User.email == email)).scalars().first()
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No account with that email — create an account first (or point the app at your hosted API)",
+        )
+    if not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account has no password yet — use Create account to claim it",
+        )
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
     settings = get_settings()
     token = mint_access_token(user_id=str(user.id), settings=settings)
     return AuthTokenOut(access_token=token, user=_user_out(user))

@@ -7,5 +7,6 @@ public class BridgeViewController: CAPBridgeViewController {
         // Explicit registration (works even if packageClassList is wiped by cap sync).
         bridge?.registerPluginInstance(CanvasLoginPlugin())
         bridge?.registerPluginInstance(HandwritingPlugin())
+        bridge?.registerPluginInstance(TextAssistPlugin())
     }
 }
