@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ContentState, EmptyState, ErrorState, LoadingState } from "../../../../components/async-state";
 import { apiDelete, apiGet, apiPatch, apiPost, toErrorMessage } from "../../../../lib/api";
 import {
-  compareTasksForSchedule,
   matchingRuleForTask,
   nextDueForRule,
   parseProblemsText,
