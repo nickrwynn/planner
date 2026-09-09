@@ -18,16 +18,19 @@ type TesseractWord = {
   bbox?: { x0?: number; y0?: number; x1?: number; y1?: number };
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let workerPromise: Promise<any> | null = null;
+type OcrWorker = {
+  recognize: (image: Blob) => Promise<{ data: { text?: string; words?: TesseractWord[] } }>;
+};
 
-async function getWorker() {
+let workerPromise: Promise<OcrWorker> | null = null;
+
+async function getWorker(): Promise<OcrWorker> {
   if (!workerPromise) {
     workerPromise = (async () => {
       const { createWorker } = await import("tesseract.js");
       return createWorker("eng", 1, {
         logger: () => undefined,
-      });
+      }) as Promise<OcrWorker>;
     })();
   }
   return workerPromise;
