@@ -1,9 +1,10 @@
 import UIKit
 import Capacitor
-import CapApp_SPM
 
-open class BridgeViewController: CAPBridgeViewController {
-    override open func capacitorDidLoad() {
+@objc(BridgeViewController)
+public class BridgeViewController: CAPBridgeViewController {
+    public override func capacitorDidLoad() {
+        // Explicit registration (works even if packageClassList is wiped by cap sync).
         bridge?.registerPluginInstance(CanvasLoginPlugin())
     }
 }

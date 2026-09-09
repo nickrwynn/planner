@@ -67,6 +67,41 @@ jobs:
       - name: Sync Capacitor iOS project
         run: pnpm --filter @planner/web cap:sync:ios
 
+      - name: Ensure CanvasLogin native plugin stays registered
+        run: |
+          set -euo pipefail
+          STORYBOARD="apps/web/ios/App/App/Base.lproj/Main.storyboard"
+          CONFIG="apps/web/ios/App/App/capacitor.config.json"
+          PLUGIN="apps/web/ios/App/App/CanvasLoginPlugin.swift"
+          BRIDGE="apps/web/ios/App/App/BridgeViewController.swift"
+
+          test -f "$PLUGIN"
+          test -f "$BRIDGE"
+
+          # cap sync can reset the storyboard back to CAPBridgeViewController
+          python3 - <<'PY'
+          from pathlib import Path
+          storyboard = Path("apps/web/ios/App/App/Base.lproj/Main.storyboard")
+          text = storyboard.read_text()
+          text = text.replace(
+              'customClass="CAPBridgeViewController" customModule="Capacitor"',
+              'customClass="BridgeViewController" customModule="App"',
+          )
+          if 'customClass="BridgeViewController"' not in text:
+              raise SystemExit("Main.storyboard missing BridgeViewController")
+          storyboard.write_text(text)
+
+          import json
+          cfg_path = Path("apps/web/ios/App/App/capacitor.config.json")
+          cfg = json.loads(cfg_path.read_text())
+          classes = cfg.get("packageClassList") or []
+          if "CanvasLoginPlugin" not in classes:
+              classes.append("CanvasLoginPlugin")
+          cfg["packageClassList"] = classes
+          cfg_path.write_text(json.dumps(cfg, indent="\t") + "\n")
+          print("storyboard + packageClassList OK")
+          PY
+
       - name: Import signing certificate
         uses: apple-actions/import-codesign-certs@v3
         with:
