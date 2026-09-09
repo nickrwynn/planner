@@ -293,9 +293,10 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
           onPdfReady={async (pdf) => {
             setError(null);
             const form = new FormData();
-            form.append("file", pdf);
+            // Explicit filename helps iOS Blob/File fallbacks through multipart upload.
+            form.append("file", pdf, pdf.name || "Scan.pdf");
             form.append("course_id", courseId);
-            form.append("title", pdf.name.replace(/\.pdf$/i, "") || "Scan");
+            form.append("title", (pdf.name || "Scan.pdf").replace(/\.pdf$/i, "") || "Scan");
             await apiPostForm<Resource>("/resources/upload", form);
             await refresh();
           }}

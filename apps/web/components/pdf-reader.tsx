@@ -67,8 +67,18 @@ export function PdfReader({
   const [rendering, setRendering] = useState(false);
 
   const selectingRef = useRef(false);
+  /** After double-tap word select, stay ready to drag-extend (pointerup must not clear this). */
+  const extendArmedRef = useRef(false);
   const anchorRangeRef = useRef<Range | null>(null);
   const lastTapRef = useRef<{ t: number; x: number; y: number } | null>(null);
+  const dragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const didDragRef = useRef(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  const onTextSelectRef = useRef(onTextSelect);
+  const onClearSelectRef = useRef(onClearSelect);
+  onTextSelectRef.current = onTextSelect;
+  onClearSelectRef.current = onClearSelect;
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +112,9 @@ export function PdfReader({
     let cancelled = false;
     let renderTask: RenderTask | null = null;
     let textLayer: TextLayer | null = null;
+    clearSelectionHighlight();
+    clearExtendMode();
+    window.getSelection()?.removeAllRanges();
 
     async function renderPage() {
       setRendering(true);
@@ -172,49 +185,46 @@ export function PdfReader({
   function emitSelection(clientX: number, clientY: number) {
     const sel = window.getSelection()?.toString().trim() || "";
     if (!sel) {
-      onClearSelect?.();
+      onClearSelectRef.current?.();
       return;
     }
-    onTextSelect?.({ text: sel, x: clientX, y: clientY });
+    onTextSelectRef.current?.({ text: sel, x: clientX, y: clientY });
   }
 
-  function onPointerDown(e: React.PointerEvent) {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    const now = Date.now();
-    const last = lastTapRef.current;
-    const isDoubleTap =
-      !!last && now - last.t < 320 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 28;
-
-    lastTapRef.current = { t: now, x: e.clientX, y: e.clientY };
-
-    if (!isDoubleTap) return;
-
-    e.preventDefault();
-    const caret = caretRangeFromPoint(e.clientX, e.clientY);
-    if (!caret) return;
-    const word = expandRangeToWord(caret);
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(word);
-    anchorRangeRef.current = word.cloneRange();
-    selectingRef.current = true;
-    textLayerRef.current?.classList.add("isSelecting");
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
+  function paintSelectionHighlight() {
+    const layer = highlightRef.current;
+    const page = stageRef.current?.querySelector(".studyPdfPage") as HTMLElement | null;
+    if (!layer || !page) return;
+    layer.innerHTML = "";
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    const pageRect = page.getBoundingClientRect();
+    for (const rect of Array.from(range.getClientRects())) {
+      if (rect.width < 1 || rect.height < 1) continue;
+      const mark = document.createElement("div");
+      mark.className = "pdfSelMark";
+      mark.style.left = `${rect.left - pageRect.left}px`;
+      mark.style.top = `${rect.top - pageRect.top}px`;
+      mark.style.width = `${rect.width}px`;
+      mark.style.height = `${rect.height}px`;
+      layer.appendChild(mark);
     }
   }
 
-  function onPointerMove(e: React.PointerEvent) {
-    if (!selectingRef.current || !anchorRangeRef.current) return;
-    const caret = caretRangeFromPoint(e.clientX, e.clientY);
+  function clearSelectionHighlight() {
+    if (highlightRef.current) highlightRef.current.innerHTML = "";
+  }
+
+  function applyRangeFromAnchorToPoint(clientX: number, clientY: number) {
+    const anchor = anchorRangeRef.current;
+    if (!anchor) return;
+    const caret = caretRangeFromPoint(clientX, clientY);
     if (!caret) return;
     const selection = window.getSelection();
     if (!selection) return;
     try {
       const next = document.createRange();
-      const anchor = anchorRangeRef.current;
       const cmp = anchor.compareBoundaryPoints(Range.START_TO_START, caret);
       if (cmp <= 0) {
         next.setStart(anchor.startContainer, anchor.startOffset);
@@ -225,24 +235,158 @@ export function PdfReader({
       }
       selection.removeAllRanges();
       selection.addRange(next);
+      paintSelectionHighlight();
     } catch {
       // ignore invalid boundary combos while dragging across nodes
     }
   }
 
-  function endSelect(e: React.PointerEvent) {
-    if (selectingRef.current) {
-      selectingRef.current = false;
-      anchorRangeRef.current = null;
-      textLayerRef.current?.classList.remove("isSelecting");
-      emitSelection(e.clientX, e.clientY);
-      return;
-    }
-    // Mouse drag / native selection fallback
-    if (e.pointerType === "mouse") {
-      emitSelection(e.clientX, e.clientY);
-    }
+  function clearExtendMode() {
+    selectingRef.current = false;
+    extendArmedRef.current = false;
+    anchorRangeRef.current = null;
+    dragOriginRef.current = null;
+    didDragRef.current = false;
+    textLayerRef.current?.classList.remove("isSelecting", "isExtendArmed");
   }
+
+  function selectWordAt(clientX: number, clientY: number): boolean {
+    const caret = caretRangeFromPoint(clientX, clientY);
+    if (!caret) return false;
+    const word = expandRangeToWord(caret);
+    if (!word.toString().trim()) return false;
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(word);
+    anchorRangeRef.current = word.cloneRange();
+    paintSelectionHighlight();
+    return true;
+  }
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (!(e.target as HTMLElement | null)?.closest?.(".studyPdfPage")) return;
+
+      const now = Date.now();
+      const last = lastTapRef.current;
+      const isDoubleTap =
+        !!last && now - last.t < 350 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 32;
+      lastTapRef.current = { t: now, x: e.clientX, y: e.clientY };
+
+      // Already armed from double-tap: this press starts the drag-extend.
+      if (extendArmedRef.current && anchorRangeRef.current && !isDoubleTap) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectingRef.current = true;
+        didDragRef.current = false;
+        dragOriginRef.current = { x: e.clientX, y: e.clientY };
+        textLayerRef.current?.classList.add("isSelecting");
+        try {
+          stage.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+        applyRangeFromAnchorToPoint(e.clientX, e.clientY);
+        return;
+      }
+
+      if (!isDoubleTap) {
+        // Single tap clears a prior unused extend arm (tap elsewhere).
+        if (extendArmedRef.current) {
+          clearExtendMode();
+          clearSelectionHighlight();
+          window.getSelection()?.removeAllRanges();
+          onClearSelectRef.current?.();
+        }
+        return;
+      }
+
+      // Double-tap: select the word and arm extend. Do NOT require continuous press.
+      e.preventDefault();
+      e.stopPropagation();
+      if (!selectWordAt(e.clientX, e.clientY)) return;
+      selectingRef.current = true;
+      extendArmedRef.current = true;
+      didDragRef.current = false;
+      dragOriginRef.current = { x: e.clientX, y: e.clientY };
+      textLayerRef.current?.classList.add("isSelecting", "isExtendArmed");
+      try {
+        stage.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      emitSelection(e.clientX, e.clientY);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!selectingRef.current || !anchorRangeRef.current) return;
+      e.preventDefault();
+      const origin = dragOriginRef.current;
+      if (origin && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 6) {
+        didDragRef.current = true;
+      }
+      applyRangeFromAnchorToPoint(e.clientX, e.clientY);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!selectingRef.current) return;
+      e.preventDefault();
+
+      // Double-tap lift with no drag: keep the word selected and stay armed for the next drag.
+      if (extendArmedRef.current && !didDragRef.current) {
+        selectingRef.current = false;
+        dragOriginRef.current = null;
+        textLayerRef.current?.classList.remove("isSelecting");
+        textLayerRef.current?.classList.add("isExtendArmed");
+        paintSelectionHighlight();
+        emitSelection(e.clientX, e.clientY);
+        return;
+      }
+
+      paintSelectionHighlight();
+      emitSelection(e.clientX, e.clientY);
+      // Keep highlight visible after drag; clear arm so a tap dismisses.
+      selectingRef.current = false;
+      extendArmedRef.current = true;
+      dragOriginRef.current = null;
+      didDragRef.current = false;
+      textLayerRef.current?.classList.remove("isSelecting");
+      textLayerRef.current?.classList.add("isExtendArmed");
+      // Re-anchor to the full selected range so another drag continues from current selection start.
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        const full = sel.getRangeAt(0).cloneRange();
+        // Keep original word start as anchor for further extends from first double-tap word.
+        // If we already have an anchor, keep its start; update end tracking via caret only.
+        if (!anchorRangeRef.current) anchorRangeRef.current = full;
+      }
+    };
+
+    const onContextMenu = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const opts: AddEventListenerOptions = { capture: true, passive: false };
+    stage.addEventListener("pointerdown", onPointerDown, opts);
+    stage.addEventListener("pointermove", onPointerMove, opts);
+    stage.addEventListener("pointerup", onPointerUp, opts);
+    stage.addEventListener("pointercancel", onPointerUp, opts);
+    stage.addEventListener("contextmenu", onContextMenu, opts);
+    stage.addEventListener("selectstart", onContextMenu, opts);
+
+    return () => {
+      stage.removeEventListener("pointerdown", onPointerDown, opts);
+      stage.removeEventListener("pointermove", onPointerMove, opts);
+      stage.removeEventListener("pointerup", onPointerUp, opts);
+      stage.removeEventListener("pointercancel", onPointerUp, opts);
+      stage.removeEventListener("contextmenu", onContextMenu, opts);
+      stage.removeEventListener("selectstart", onContextMenu, opts);
+    };
+  }, []);
 
   if (error) {
     return (
@@ -253,16 +397,11 @@ export function PdfReader({
   }
 
   return (
-    <div
-      className="studyPdfStage"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endSelect}
-      onPointerCancel={endSelect}
-    >
+    <div ref={stageRef} className="studyPdfStage">
       <div className="studyPdfPage">
         {rendering ? <div className="studyPdfLoading">Rendering page…</div> : null}
         <canvas ref={canvasRef} className="studyPdfCanvas" />
+        <div ref={highlightRef} className="pdfSelLayer" aria-hidden />
         <div ref={textLayerRef} className="textLayer" />
       </div>
     </div>

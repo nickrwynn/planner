@@ -47,5 +47,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>StudyFlows uses the camera to scan worksheets and notes into PDF resources.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>StudyFlows uses your photo library so you can add page photos to a scanned PDF.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>StudyFlows can use the microphone for spoken study responses when you enable that feature.</string>
 </dict>
 </plist>

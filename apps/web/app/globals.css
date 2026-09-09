@@ -985,7 +985,7 @@ html.agentCollapsed .appShell {
   background: #f3f4f6;
 }
 
-/* pdf.js text layer — selectable overlay on the rendered page */
+/* pdf.js text layer — custom selection (native iOS callout/menu disabled) */
 .textLayer {
   position: absolute;
   inset: 0;
@@ -996,13 +996,15 @@ html.agentCollapsed .appShell {
   forced-color-adjust: none;
   transform-origin: 0 0;
   z-index: 2;
-  user-select: text;
-  -webkit-user-select: text;
-  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
 }
 
-.textLayer.isSelecting {
-  touch-action: none;
+.textLayer.isSelecting,
+.textLayer.isExtendArmed {
+  cursor: text;
 }
 
 .textLayer span,
@@ -1012,16 +1014,32 @@ html.agentCollapsed .appShell {
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
-  user-select: text;
-  -webkit-user-select: text;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-.textLayer ::selection {
+/* Programmatic Selection API highlight */
+.textLayer ::selection,
+.textLayer *::selection {
   background: rgba(255, 215, 0, 0.45);
 }
 
 .textLayer span.pdfFindMatch {
   background: rgba(250, 204, 21, 0.55);
+}
+
+.pdfSelLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.pdfSelMark {
+  position: absolute;
+  background: rgba(255, 215, 0, 0.45);
+  border-radius: 2px;
 }
 
 .studyFindBar {

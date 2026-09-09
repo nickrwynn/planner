@@ -10,37 +10,95 @@ export type ScanPage = {
   height: number;
 };
 
-export async function imageFileToScanPage(file: Blob, maxSide = 1600): Promise<ScanPage> {
-  const bitmap = await createImageBitmap(file);
-  try {
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas unavailable");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    const img = ctx.getImageData(0, 0, width, height);
-    const d = img.data;
-    const contrast = 1.12;
-    const intercept = 128 * (1 - contrast);
-    for (let i = 0; i < d.length; i += 4) {
-      d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept));
-      d[i + 1] = Math.min(255, Math.max(0, d[i + 1] * contrast + intercept));
-      d[i + 2] = Math.min(255, Math.max(0, d[i + 2] * contrast + intercept));
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 0.82): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const fromDataUrl = () => {
+      try {
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const bin = atob(dataUrl.split(",")[1] || "");
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+        resolve(new Blob([bytes], { type: "image/jpeg" }));
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error("JPEG encode failed"));
+      }
+    };
+
+    if (typeof canvas.toBlob === "function") {
+      try {
+        canvas.toBlob((b) => (b ? resolve(b) : fromDataUrl()), "image/jpeg", quality);
+        return;
+      } catch {
+        fromDataUrl();
+        return;
+      }
     }
-    ctx.putImageData(img, 0, 0);
-    const blob: Blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("JPEG encode failed"))), "image/jpeg", 0.88);
+    fromDataUrl();
+  });
+}
+
+async function loadImageElement(file: Blob): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    // Helps iOS decode camera/HEIC photos into something canvas can draw.
+    (img as HTMLImageElement & { playsInline?: boolean }).playsInline = true;
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () =>
+        reject(new Error("Could not read that photo. Try Retake, or pick a JPG/PNG from Photos."));
+      img.src = url;
     });
-    return { jpeg: new Uint8Array(await blob.arrayBuffer()), width, height };
+    if (!(img.naturalWidth || img.width) || !(img.naturalHeight || img.height)) {
+      throw new Error("Photo has no dimensions");
+    }
+    return img;
   } finally {
-    bitmap.close();
+    URL.revokeObjectURL(url);
   }
+}
+
+/**
+ * Decode via <img> (best HEIC/camera support on iPad), draw scaled to canvas.
+ * Never uses getImageData() — that allocates full RGBA and crashes WKWebView on phone photos.
+ */
+export async function imageFileToScanPage(file: Blob, maxSide = 1280): Promise<ScanPage> {
+  const img = await loadImageElement(file);
+  const srcW = img.naturalWidth || img.width;
+  const srcH = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxSide / Math.max(srcW, srcH));
+  const width = Math.max(1, Math.round(srcW * scale));
+  const height = Math.max(1, Math.round(srcH * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) throw new Error("Canvas unavailable");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  try {
+    ctx.filter = "contrast(1.08) brightness(1.02)";
+  } catch {
+    // ignore unsupported filter
+  }
+  ctx.drawImage(img, 0, 0, width, height);
+  try {
+    ctx.filter = "none";
+  } catch {
+    // ignore
+  }
+
+  // Detach image src to help GC on iOS.
+  img.src = "";
+
+  const blob = await canvasToJpegBlob(canvas, 0.8);
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return { jpeg: new Uint8Array(await blob.arrayBuffer()), width, height };
 }
 
 export function buildPdfFromScanPages(pages: ScanPage[]): Blob {
@@ -112,12 +170,36 @@ export function buildPdfFromScanPages(pages: ScanPage[]): Blob {
   return new Blob(bytes, { type: "application/pdf" });
 }
 
+function yieldFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => resolve());
+    else setTimeout(resolve, 0);
+  });
+}
+
 export async function filesToScanPdf(files: Blob[], title = "Scan"): Promise<File> {
+  if (!files.length) throw new Error("Add at least one page");
   const pages: ScanPage[] = [];
-  for (const file of files) {
-    pages.push(await imageFileToScanPage(file));
+  for (let i = 0; i < files.length; i += 1) {
+    try {
+      pages.push(await imageFileToScanPage(files[i]));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to process photo";
+      throw new Error(`Page ${i + 1}: ${msg}`);
+    }
+    await yieldFrame();
   }
   const pdf = buildPdfFromScanPages(pages);
   const safe = title.replace(/[^\w\- ]+/g, "").trim() || "Scan";
-  return new File([pdf], `${safe}.pdf`, { type: "application/pdf" });
+  const filename = `${safe}.pdf`;
+  if (typeof File !== "undefined") {
+    try {
+      return new File([pdf], filename, { type: "application/pdf", lastModified: Date.now() });
+    } catch {
+      // fall through
+    }
+  }
+  const named = new Blob([pdf], { type: "application/pdf" }) as Blob & { name: string };
+  named.name = filename;
+  return named as File;
 }
