@@ -102,6 +102,9 @@ jobs:
           print("storyboard + packageClassList OK")
           PY
 
+      - name: Preflight CanvasLogin wiring
+        run: bash scripts/ios-canvas-login-preflight.sh
+
       - name: Import signing certificate
         uses: apple-actions/import-codesign-certs@v3
         with:
