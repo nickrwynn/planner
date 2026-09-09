@@ -87,7 +87,7 @@ jobs:
         run: |
           cd apps/web/ios/App
           xcodebuild \
-            -workspace App.xcworkspace \
+            -project App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/StudyFlows.xcarchive" \
@@ -96,6 +96,7 @@ jobs:
             -authenticationKeyID "${{ secrets.APPSTORE_CONNECT_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.APPSTORE_CONNECT_ISSUER_ID }}" \
             DEVELOPMENT_TEAM="${{ env.APPLE_TEAM_ID }}" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.studyflows.app \
             archive
 
       - name: Create export options
