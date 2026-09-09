@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,23 +30,13 @@ def _http_status(exc: GoogleAPIError) -> int:
     return exc.status_code if exc.status_code and 400 <= exc.status_code < 600 else 400
 
 
-def _safe_return_to(raw: str | None, fallback: str) -> str:
-    if not raw:
-        return fallback
-    try:
-        parsed = urlparse(raw)
-    except Exception:  # noqa: BLE001
-        return fallback
-    # Only allow relative paths or same-origin web success host paths
-    if raw.startswith("/") and not raw.startswith("//"):
-        # prepend web origin from success URL
-        base = urlparse(fallback)
-        return f"{base.scheme}://{base.netloc}{raw}"
-    if parsed.scheme in {"http", "https"} and parsed.netloc:
-        allowed = urlparse(fallback).netloc
-        if parsed.netloc == allowed:
-            return raw
-    return fallback
+def _append_query(url: str, **params: str) -> str:
+    parts = urlsplit(url)
+    q = dict(parse_qsl(parts.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value is not None and value != "":
+            q[key] = value
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(q), parts.fragment))
 
 
 @router.get("/status", response_model=GoogleDriveStatusRead)
@@ -78,15 +68,15 @@ def oauth_callback(
     fail = settings.google_oauth_failure_url
     ok = settings.google_oauth_success_url
     if error:
-        return RedirectResponse(url=f"{fail}&reason={quote(error)}", status_code=302)
+        return RedirectResponse(url=_append_query(fail, google="error", reason=error), status_code=302)
     if not code or not state:
-        return RedirectResponse(url=f"{fail}&reason=missing_code", status_code=302)
+        return RedirectResponse(url=_append_query(fail, google="error", reason="missing_code"), status_code=302)
     try:
         claims = google_oauth.parse_oauth_state(state)
         user_id = UUID(str(claims["sub"]))
         user = db.get(User, user_id)
         if not user:
-            return RedirectResponse(url=f"{fail}&reason=unknown_user", status_code=302)
+            return RedirectResponse(url=_append_query(fail, google="error", reason="unknown_user"), status_code=302)
         tokens = google_oauth.exchange_authorization_code(code=code)
         account = drive_service.fetch_account_profile(tokens["access_token"])
         drive_service.connect_oauth_tokens(
@@ -97,15 +87,17 @@ def oauth_callback(
             expires_in=tokens.get("expires_in"),
             account=account,
         )
-        dest = _safe_return_to(str(claims.get("return_to") or ""), ok)
-        sep = "&" if "?" in dest else "?"
-        if "google=" not in dest:
-            dest = f"{dest}{sep}google=connected"
+        # Always land on the public /oauth/done page (never the authenticated app UI).
+        # The main app already has the user session and will close the in-app browser.
+        return_to = str(claims.get("return_to") or "").strip()
+        dest = _append_query(ok, google="connected")
+        if return_to.startswith("/") and not return_to.startswith("//"):
+            dest = _append_query(dest, return_to=return_to)
         return RedirectResponse(url=dest, status_code=302)
     except GoogleAPIError:
-        return RedirectResponse(url=f"{fail}&reason=oauth_failed", status_code=302)
+        return RedirectResponse(url=_append_query(fail, google="error", reason="oauth_failed"), status_code=302)
     except Exception:  # noqa: BLE001
-        return RedirectResponse(url=f"{fail}&reason=oauth_failed", status_code=302)
+        return RedirectResponse(url=_append_query(fail, google="error", reason="oauth_failed"), status_code=302)
 
 
 @router.delete("/disconnect", response_model=GoogleDriveStatusRead)

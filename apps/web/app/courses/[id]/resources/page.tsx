@@ -23,21 +23,135 @@ type DriveFile = {
   size?: number | null;
 };
 
-function moduleMeta(r: Resource): { name: string; position: number } {
+function moduleMeta(r: Resource): {
+  name: string;
+  position: number;
+  itemPosition: number;
+  itemType: string;
+  dueAt: string | null;
+  points: string | null;
+  htmlUrl: string | null;
+} {
   const meta = (r.metadata_json && typeof r.metadata_json === "object" ? r.metadata_json : {}) as Record<
     string,
     unknown
   >;
-  const name = typeof meta.canvas_module_name === "string" && meta.canvas_module_name.trim()
-    ? meta.canvas_module_name.trim()
-    : r.source_type?.startsWith("canvas")
-      ? "Other Canvas materials"
-      : "Uploaded & other";
+  const name =
+    typeof meta.canvas_module_name === "string" && meta.canvas_module_name.trim()
+      ? meta.canvas_module_name.trim()
+      : r.source_type?.startsWith("canvas")
+        ? "Other Canvas materials"
+        : "Uploaded & other";
   const position =
     typeof meta.canvas_module_position === "number"
       ? meta.canvas_module_position
       : Number(meta.canvas_module_position) || (name === "Uploaded & other" ? 10_000 : 9_000);
-  return { name, position };
+  const itemPosition =
+    typeof meta.canvas_module_item_position === "number"
+      ? meta.canvas_module_item_position
+      : Number(meta.canvas_module_item_position) || 0;
+  const itemType = typeof meta.canvas_module_item_type === "string" ? meta.canvas_module_item_type : "";
+  const dueAt = typeof meta.due_at === "string" ? meta.due_at : null;
+  const points =
+    meta.points_possible != null && meta.points_possible !== ""
+      ? String(meta.points_possible)
+      : null;
+  const htmlUrl =
+    typeof meta.canvas_html_url === "string"
+      ? meta.canvas_html_url
+      : typeof meta.canvas_external_url === "string"
+        ? meta.canvas_external_url
+        : null;
+  return { name, position, itemPosition, itemType, dueAt, points, htmlUrl };
+}
+
+function resourceKind(r: Resource): "page" | "pdf" | "image" | "assignment" | "link" | "file" {
+  const meta = (r.metadata_json && typeof r.metadata_json === "object" ? r.metadata_json : {}) as Record<
+    string,
+    unknown
+  >;
+  const itemType = String(meta.canvas_module_item_type || "").toLowerCase();
+  if (itemType === "assignment" || itemType === "quiz") return "assignment";
+  if (itemType === "externalurl" || itemType === "externaltool" || r.resource_type === "link") return "link";
+  const mime = (r.mime_type || "").toLowerCase();
+  const title = (r.title || "").toLowerCase();
+  const type = (r.resource_type || "").toLowerCase();
+  if (type === "page" || r.source_type === "canvas_page") return "page";
+  if (type === "assignment" || /assignment|exit ticket|homework/i.test(title)) return "assignment";
+  if (mime.includes("pdf") || title.endsWith(".pdf")) return "pdf";
+  if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic)$/i.test(title)) return "image";
+  return "file";
+}
+
+function statusLabel(r: Resource): { text: string; tone: "ok" | "warn" | "bad" | "muted" } {
+  if (r.index_status === "done" || r.lifecycle_state === "searchable") {
+    return { text: "Ready", tone: "ok" };
+  }
+  if (r.index_status === "failed" || r.parse_status === "failed") {
+    return { text: "Failed", tone: "bad" };
+  }
+  if (r.index_status === "pending" || r.index_status === "queued" || r.parse_status === "pending" || r.parse_status === "processing") {
+    return { text: "Indexing…", tone: "warn" };
+  }
+  return { text: "Uploaded", tone: "muted" };
+}
+
+function formatDue(dueAt: string | null): string | null {
+  if (!dueAt) return null;
+  const d = new Date(dueAt);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function ResourceTypeIcon({ kind }: { kind: ReturnType<typeof resourceKind> }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true as const };
+  if (kind === "assignment") {
+    return (
+      <svg {...common}>
+        <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M14 3v5h5M8.5 13h7M8.5 17h5M9 9.5l1.2 1.2L12.5 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === "link") {
+    return (
+      <svg {...common}>
+        <path d="M10 14a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M14 10a5 5 0 0 0-7.07 0L5.5 11.41a5 5 0 0 0 7.07 7.07L14 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (kind === "pdf") {
+    return (
+      <svg {...common}>
+        <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M14 3v5h5M9 14h6M9 17h4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (kind === "image") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.6" />
+        <circle cx="9" cy="10" r="1.5" fill="currentColor" />
+        <path d="M4 16l4.5-4 3.5 3 2.5-2L20 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === "page") {
+    return (
+      <svg {...common}>
+        <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M14 3v5h5M9 13h6M9 16h6M9 10h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  );
 }
 
 export default function CourseResourcesPage({ params }: { params: { id: string } }) {
@@ -96,7 +210,11 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
       .sort((a, b) => a[1].position - b[1].position || a[0].localeCompare(b[0]))
       .map(([name, g]) => ({
         name,
-        items: g.items.slice().sort((a, b) => a.title.localeCompare(b.title)),
+        items: g.items.slice().sort((a, b) => {
+          const am = moduleMeta(a);
+          const bm = moduleMeta(b);
+          return am.itemPosition - bm.itemPosition || a.title.localeCompare(b.title);
+        }),
       }));
   }, [resources]);
 
@@ -146,15 +264,26 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
         return_to: returnTo,
       });
       const { openOAuthAuthorizeUrl } = await import("../../../../lib/oauth-browser");
-      const mode = await openOAuthAuthorizeUrl(res.authorize_url);
-      if (mode === "browser") {
-        setDriveBanner(
-          "Complete Google sign-in in the browser window. When it finishes, return here and tap Refresh."
-        );
-      }
+      setDriveBanner("Complete Google sign-in in the browser window…");
+      const mode = await openOAuthAuthorizeUrl(res.authorize_url, {
+        waitUntil: async () => {
+          const status = await apiGet<GoogleStatus>("/integrations/google/status");
+          if (status.connected) {
+            setGoogleStatus(status);
+            setDriveBanner("Google Drive connected.");
+            setDriveBusy(false);
+            return true;
+          }
+          return false;
+        },
+        timeoutMs: 180_000,
+        pollMs: 1200,
+      });
+      if (mode === "redirect") return;
+      // Browser/popup opened; keep a light busy state until connected or user cancels.
+      setDriveBusy(false);
     } catch (err) {
       setError(toErrorMessage(err));
-    } finally {
       setDriveBusy(false);
     }
   }
@@ -384,57 +513,77 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
 
       {error ? <ErrorState message={error} onRetry={refresh} /> : null}
 
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Course files</div>
-        <div style={{ fontSize: 13, color: "#555", marginBottom: 8 }}>
-          Grouped like Canvas modules (Week 1…, Student Resources, …). Re-sync Canvas to refresh.
+      <div className="card canvasModulesCard">
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Modules</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+          Mirrored from Canvas modules. Re-sync Canvas on the course page to refresh.
         </div>
         {isLoading ? <LoadingState label="Loading resources..." /> : null}
         {!isLoading && groupedResources.length > 0 ? (
           <ContentState>
-            <div style={{ display: "grid", gap: 16 }}>
+            <div className="canvasModules">
               {groupedResources.map((group) => (
-                <div key={group.name} style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, borderTop: "1px solid #e5e7eb", paddingTop: 10 }}>
-                    {group.name}
-                    <span style={{ marginLeft: 8, fontWeight: 500, color: "#6b7280" }}>{group.items.length}</span>
+                <details key={group.name} className="canvasModule" open>
+                  <summary className="canvasModuleHeader">
+                    <span className="canvasModuleChevron" aria-hidden />
+                    <span className="canvasModuleTitle">{group.name}</span>
+                    <span className="canvasModuleCount">{group.items.length}</span>
+                  </summary>
+                  <div className="canvasModuleItems">
+                    {group.items.map((r) => {
+                      const meta = moduleMeta(r);
+                      const kind = resourceKind(r);
+                      const status = statusLabel(r);
+                      const due = formatDue(meta.dueAt);
+                      const href = meta.htmlUrl || `/resources/${r.id}`;
+                      const external = Boolean(meta.htmlUrl);
+                      return (
+                        <div key={r.id} className="canvasModuleItem">
+                          <div className="canvasModuleItemIcon" data-kind={kind}>
+                            <ResourceTypeIcon kind={kind} />
+                          </div>
+                          <div className="canvasModuleItemMain">
+                            {external ? (
+                              <a
+                                className="canvasModuleItemTitle"
+                                href={href}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {r.title}
+                              </a>
+                            ) : (
+                              <Link className="canvasModuleItemTitle" href={href}>
+                                {r.title}
+                              </Link>
+                            )}
+                            <div className="canvasModuleItemMeta">
+                              {due ? <span>{due}</span> : null}
+                              {meta.points != null ? <span>{meta.points} pts</span> : null}
+                              <span className={`canvasModuleStatus tone-${status.tone}`}>{status.text}</span>
+                            </div>
+                          </div>
+                          <div className="canvasModuleItemActions">
+                            <button
+                              type="button"
+                              onClick={() => onSendToNotes(r)}
+                              disabled={!(r.index_status === "done" || r.lifecycle_state === "searchable")}
+                              title="Requires indexed text"
+                            >
+                              Notes
+                            </button>
+                            <button type="button" onClick={() => onRename(r)}>
+                              Rename
+                            </button>
+                            <button type="button" onClick={() => onDelete(r)}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {group.items.map((r) => (
-                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>
-                          <Link href={`/resources/${r.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                            {r.title}
-                          </Link>
-                          {r.source_type === "google_drive" ? (
-                            <span style={{ marginLeft: 8, fontSize: 11, color: "#0f766e" }}>Drive</span>
-                          ) : r.source_type?.startsWith("canvas") ? (
-                            <span style={{ marginLeft: 8, fontSize: 11, color: "#1d4ed8" }}>Canvas</span>
-                          ) : null}
-                        </div>
-                        <div style={{ color: "#555", fontSize: 13 }}>
-                          {r.resource_type ?? "file"} · index={r.index_status}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          onClick={() => onSendToNotes(r)}
-                          style={{ padding: "6px 10px" }}
-                          disabled={!(r.index_status === "done" || r.lifecycle_state === "searchable")}
-                          title="Requires indexed text chunks"
-                        >
-                          Send to notes
-                        </button>
-                        <button onClick={() => onRename(r)} style={{ padding: "6px 10px" }}>
-                          Rename
-                        </button>
-                        <button onClick={() => onDelete(r)} style={{ padding: "6px 10px" }}>
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                </details>
               ))}
             </div>
           </ContentState>

@@ -8,9 +8,9 @@ import { InputModeProvider } from "./pen-keyboard-bridge";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = pathname === "/login";
+  const isBare = pathname === "/login" || pathname === "/oauth/done";
 
-  if (isLogin) {
+  if (isBare) {
     return <AuthGate>{children}</AuthGate>;
   }
 

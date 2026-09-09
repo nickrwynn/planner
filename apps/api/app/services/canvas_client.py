@@ -150,6 +150,13 @@ class CanvasClient:
             params={"include[]": ["items"]},
         )
 
+    def list_module_items(self, course_id: str | int, module_id: str | int) -> list[dict]:
+        """Full item list when include[]=items on modules is truncated."""
+        return self.get_paginated(
+            f"/api/v1/courses/{course_id}/modules/{module_id}/items",
+            params={},
+        )
+
     def get_page(self, course_id: str | int, page_url: str) -> dict:
         data = self.get_json(f"/api/v1/courses/{course_id}/pages/{page_url}")
         if not isinstance(data, dict):
