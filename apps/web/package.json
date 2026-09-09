@@ -8,22 +8,28 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run lint && pnpm run typecheck",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:ipad": "playwright test e2e/ipad-web-smoke.spec.ts",
+    "cap:add:ios": "cap add ios",
+    "cap:sync:ios": "cap sync ios"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.1",
     "next": "14.2.5",
+    "pdfjs-dist": "4.10.38",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "@playwright/test": "^1.54.2",
     "@types/node": "20.14.11",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
-    "@axe-core/playwright": "^4.10.2",
-    "@playwright/test": "^1.54.2",
     "eslint": "8.57.0",
     "eslint-config-next": "14.2.5",
     "typescript": "5.5.4"
   }
 }
-

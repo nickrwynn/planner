@@ -17,7 +17,7 @@ Ship a private iPad beta through TestFlight while keeping day-to-day development
 
 - Apple Developer Program membership.
 - App Store Connect app record created.
-- Bundle ID reserved for iOS app (example: `com.academicos.planner`).
+- Bundle ID reserved for iOS app: `com.studyflows.app`.
 - Hosted HTTPS URL for production-like web experience (used by `CAP_SERVER_URL`).
 - Node.js `>=22` for local Capacitor CLI commands.
 
@@ -81,6 +81,22 @@ Latest dispatch attempt evidence:
 - `2026-04-04T05:12:37Z`: run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`.
 - `2026-04-04T05:19:06Z`: second dispatch succeeded, run URL `https://github.com/nickrwynn/planner/actions/runs/23972118129`.
 - `2026-04-04T05:19:29Z`: second run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`.
+- `2026-04-04T05:26:43Z`: third dispatch succeeded, run URL `https://github.com/nickrwynn/planner/actions/runs/23972234629`.
+- `2026-04-04T05:26:54Z`: third run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID` and all required iOS/TestFlight secrets empty.
+- `2026-04-04T05:37:09Z`: fourth dispatch succeeded, run URL `https://github.com/nickrwynn/planner/actions/runs/23972405379`.
+- `2026-04-04T05:37:21Z`: fourth run failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`; workflow log shows all 8 required secret env vars empty.
+- `2026-04-04T06:03:11Z`: evidence recheck confirmed `gh secret list` still empty and no new owner-provided signing artifacts detected in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads`; dispatch intentionally not rerun because it would repeat the same secret-gate failure without new evidence.
+- `2026-04-04T06:03:11Z`: `.github/workflows/ios-testflight.yml` revalidated unchanged; secret gate, archive/sign/export/upload stages remain correctly ordered for first signed upload once secrets exist.
+- `2026-04-09T09:10:16Z`: fresh recheck confirmed `gh secret list` still empty; required secret population is still not started.
+- `2026-04-09T09:10:16Z`: latest run remains `23972405379` (failure in `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`).
+- `2026-04-09T09:10:16Z`: no owner-provided signing artifacts detected in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads` for `AuthKey_*.p8`, `*.p12`, or `*.mobileprovision`.
+- `2026-04-09T09:10:16Z`: dispatch intentionally not rerun because no new secrets/artifacts exist and it would reproduce the same PHASE C gate failure.
+- `2026-04-09T09:11:27Z`: local secret-population preflight confirmed owner-only inputs remained unavailable (`APPLE_TEAM_ID`, `APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`, `IOS_CERTIFICATE_PASSWORD`, `CAP_SERVER_URL` all missing), so PHASE C cannot advance to secret creation.
+- `2026-04-09T09:27:29Z`: recheck confirmed no new repository secrets, no new signing artifacts, and no newer workflow result than failed run `23972405379`; PHASE C remains the active blocker and dispatch stayed paused.
+- `2026-04-09T09:36:36Z`: blocker recheck remained unchanged (`gh secret list` empty, latest run `23972405379` still failed at required-secret validation, and no owner signing artifacts detected), so PHASE C remains active and workflow rerun stayed paused.
+- `2026-04-09T09:37:44Z`: blocker recheck remained unchanged (`gh secret list` empty, latest run still `23972405379` failed, no signing artifacts in monitored paths), so PHASE C stayed active and no rerun was triggered.
+- `2026-04-09T09:40:13Z`: blocker recheck remained unchanged (`gh secret list` empty, latest run still `23972405379` failed, and no `.p8`/`.p12`/`.mobileprovision` artifacts in monitored paths), so PHASE C remained active and rerun stayed paused.
+- `2026-04-09T09:41:25Z`: blocker recheck remained unchanged (`gh secret list` empty, latest run still `23972405379` failed, no signing artifacts in monitored paths), so PHASE C remained active and rerun stayed paused.
 - Interpretation: PHASE A remains closed; PHASE C (secret population) is still the blocking gate before signing and upload stages can execute.
 
 Triggers:

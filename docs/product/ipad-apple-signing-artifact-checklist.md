@@ -4,22 +4,22 @@ Use this checklist to close Apple/App Store Connect/signing blockers before a re
 
 ## Ownership and run metadata
 
-- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
+- Candidate SHA: `8054bee8f3a931b2dc1e6c9d4b22773d2c5fa358`
 - Release owner: `nickrwynn` (GitHub)
 - Apple account owner: `BLOCKED - not provided in repo evidence`
-- Date (UTC): `2026-04-04T05:18:49Z`
+- Date (UTC): `2026-04-04T06:03:11Z`
 
 ## Phase execution status
 
-- [x] PHASE A complete: `ios-testflight.yml` is active on remote (`gh workflow list` shows `iOS TestFlight`).
+- [x] PHASE A complete: remote revalidated (`gh workflow list` shows `iOS TestFlight` active; dispatch run `23972234629` created successfully).
 - [ ] PHASE B in progress: Apple signing artifacts must be populated manually by Apple account owner.
-- [ ] PHASE B recheck: no new Apple artifact evidence captured in repository as of `2026-04-04T05:18:49Z`.
+- [ ] PHASE B recheck: no new Apple artifact evidence captured in checked local paths as of `2026-04-04T06:03:11Z`.
 
 ## Apple Developer + App Store Connect objects
 
 - [ ] Apple Developer Program membership is active. (BLOCKED: no Apple evidence attached)
 - [ ] Team ID captured (`APPLE_TEAM_ID`). (BLOCKED: no Team ID evidence)
-- [x] Bundle ID created (`com.academicos.planner`) with matching capabilities. (verified in `apps/web/capacitor.config.ts`)
+- [x] Bundle ID created (`com.studyflows.app`) with matching capabilities. (verified in `apps/web/capacitor.config.ts`)
 - [ ] App Store Connect app record exists for the same bundle ID. (BLOCKED: no ASC evidence attached)
 - [ ] Internal TestFlight group exists. (BLOCKED: no ASC group evidence attached)
 
@@ -38,7 +38,7 @@ Use this checklist to close Apple/App Store Connect/signing blockers before a re
 - [ ] `.p12` password recorded in secure manager. (BLOCKED)
 - [ ] `.p12` content base64-encoded for `IOS_CERTIFICATE_P12_BASE64`. (BLOCKED)
 - [ ] Password mapped to `IOS_CERTIFICATE_PASSWORD`. (BLOCKED)
-- [ ] App Store provisioning profile generated for `com.academicos.planner`. (BLOCKED)
+- [ ] App Store provisioning profile generated for `com.studyflows.app`. (BLOCKED)
 - [ ] Provisioning profile base64-encoded for `IOS_PROVISIONING_PROFILE_BASE64`. (BLOCKED)
 
 ## Consistency checks (must pass)
@@ -51,21 +51,27 @@ Use this checklist to close Apple/App Store Connect/signing blockers before a re
 
 | Artifact | Status | Owner | Evidence reference |
 |---|---|---|---|
-| Team ID | BLOCKED | Apple account owner (TBD) | Missing from secrets and docs; `gh secret list` returned empty |
-| Bundle ID | VERIFIED (repo) | Release owner | `apps/web/capacitor.config.ts` appId `com.academicos.planner` |
+| Team ID | BLOCKED | Apple account owner (TBD) | Missing from secrets and docs; `gh secret list` returned empty at `2026-04-04T06:03:11Z` |
+| Bundle ID | VERIFIED (repo) | Release owner | `apps/web/capacitor.config.ts` appId `com.studyflows.app` |
 | ASC app record | BLOCKED | Apple account owner (TBD) | No App Store Connect evidence attached |
 | API key (`.p8`) | BLOCKED | Apple account owner (TBD) | No artifact reference and no matching secret present |
 | Distribution cert (`.p12`) | BLOCKED | Apple account owner (TBD) | No artifact reference and no matching secret present |
 | Provisioning profile | BLOCKED | Apple account owner (TBD) | No artifact reference and no matching secret present |
 
+## Execution recheck notes (PHASE B)
+
+- `2026-04-04T06:03:11Z`: artifact scan across `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, and `/home/hpc1/Downloads` found no `.p8`, `.p12`, or `.mobileprovision` files.
+- `2026-04-04T06:03:11Z`: `gh secret list` remains empty, consistent with missing owner-provided Team/API/cert/profile artifacts.
+- `2026-04-04T06:03:11Z`: owner-only Apple portal artifacts remain the hard blocker before PHASE C secret population can be completed.
+
 ## Required closure evidence for PHASE B
 
 - Team ID value captured and matches cert/profile/ASC team.
-- ASC app record URL or screenshot reference for `com.academicos.planner`.
+- ASC app record URL or screenshot reference for `com.studyflows.app`.
 - ASC internal TestFlight group reference.
 - API key metadata captured (`APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`) and `.p8` export confirmed.
 - Distribution certificate export (`.p12`) confirmed with password owner reference.
-- App Store provisioning profile reference for `com.academicos.planner`.
+- App Store provisioning profile reference for `com.studyflows.app`.
 
 ## Artifact preparation commands (owner-run)
 

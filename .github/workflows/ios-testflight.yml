@@ -90,7 +90,7 @@ jobs:
             -workspace App.xcworkspace \
             -scheme App \
             -configuration Release \
-            -archivePath "$RUNNER_TEMP/AcademicOS.xcarchive" \
+            -archivePath "$RUNNER_TEMP/StudyFlows.xcarchive" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${{ secrets.APPSTORE_CONNECT_KEY_ID }}.p8" \
             -authenticationKeyID "${{ secrets.APPSTORE_CONNECT_KEY_ID }}" \
@@ -120,7 +120,7 @@ jobs:
       - name: Export IPA
         run: |
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/AcademicOS.xcarchive" \
+            -archivePath "$RUNNER_TEMP/StudyFlows.xcarchive" \
             -exportPath "$RUNNER_TEMP/export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
