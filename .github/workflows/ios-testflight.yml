@@ -12,7 +12,9 @@ jobs:
     env:
       NODE_VERSION: "22"
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      CAP_SERVER_URL: ${{ secrets.CAP_SERVER_URL }}
+      # mystudyflow.app is OpenDNS-blocked on TAMU Wi‑Fi. Pin a live trycloudflare tunnel
+      # until CAP_SERVER_URL secret points at an unblocked always-on host.
+      CAP_SERVER_URL: https://asian-spice-refrigerator-sunrise.trycloudflare.com
     steps:
       - name: Checkout
         uses: actions/checkout@v4
