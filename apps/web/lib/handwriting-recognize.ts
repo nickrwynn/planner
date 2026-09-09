@@ -1,5 +1,6 @@
 import { isCloudAiAvailable } from "./ai-availability";
 import { canRecognizeOnDevice, recognizeOnDevice } from "./handwriting-native";
+import { recognizeMathOnDevice } from "./math/recognize-math";
 import { ocrInkImage } from "./scan-ocr";
 
 export type HandwritingMode = "text" | "math";
@@ -13,17 +14,19 @@ export type HandwritingResult = {
 /**
  * Recognition order:
  *  1. Apple Vision on-device (iPad app) — instant, no network, no API key.
+ *     Math additionally runs our own layout engine to produce LaTeX.
  *  2. Tesseract in the browser — on-device fallback for web.
- *  3. Cloud LLM — math only, and only when a key is actually configured.
- *
- * Math has no on-device LaTeX engine yet, so it falls back to the cloud. When
- * the cloud is unavailable the on-device plain text is returned rather than
- * nothing.
+ *  3. Cloud LLM — only when on-device came up empty and a key is configured.
  */
 export async function recognizeHandwriting(
   imageBase64: string,
   mode: HandwritingMode
 ): Promise<HandwritingResult> {
+  if (mode === "math") {
+    const latex = await recognizeMathOnDevice(imageBase64);
+    if (latex) return { text: latex, latex, source: "device" };
+  }
+
   const device = await recognizeOnDevice(imageBase64, mode);
   if (device && mode === "text") {
     return { text: device, source: "device" };

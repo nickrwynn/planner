@@ -1,10 +1,23 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
+export type NativeCharBox = {
+  char: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 type HandwritingNativePlugin = {
   isAvailable(): Promise<{ available: boolean }>;
   recognize(options: { imageBase64: string; mode: "text" | "math" }): Promise<{
     text: string;
     lineCount: number;
+  }>;
+  recognizeSymbols(options: { imageBase64: string }): Promise<{
+    symbols: NativeCharBox[];
+    width: number;
+    height: number;
   }>;
 };
 
@@ -30,5 +43,16 @@ export async function recognizeOnDevice(
     return text || null;
   } catch {
     return null;
+  }
+}
+
+/** Per-character boxes from Vision, for the math layout pass. */
+export async function recognizeSymbolsOnDevice(imageBase64: string): Promise<NativeCharBox[]> {
+  if (!canRecognizeOnDevice()) return [];
+  try {
+    const res = await HandwritingNative.recognizeSymbols({ imageBase64 });
+    return res.symbols || [];
+  } catch {
+    return [];
   }
 }
