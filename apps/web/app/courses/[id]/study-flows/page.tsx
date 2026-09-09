@@ -4,8 +4,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ContentState, EmptyState, ErrorState, LoadingState } from "../../../../components/async-state";
-import { InkPad } from "../../../../components/ink-pad";
 import { StudyArtifactView } from "../../../../components/study-artifact-view";
+import { StudyNotebook, type PaperStyle } from "../../../../components/study-notebook";
+import { recognizeHandwriting } from "../../../../lib/handwriting-recognize";
 import { apiGet, apiGetArrayBuffer, apiPost, toErrorMessage } from "../../../../lib/api";
 import { speakText, stopSpeaking } from "../../../../lib/speech";
 import {
@@ -96,8 +97,9 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
   const [quizPassed, setQuizPassed] = useState<boolean | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
-  const [commentsOpen, setCommentsOpen] = useState(false);
   const [savedNote, setSavedNote] = useState<SavedNoteInfo | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<"resource" | "notebook">("resource");
+  const [paperStyle, setPaperStyle] = useState<PaperStyle>("notebook");
   const [inkDraft, setInkDraft] = useState("");
   const [inkLatex, setInkLatex] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -679,7 +681,7 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
       section_hint: sectionKey || opts.highlight || null,
     });
     setSavedNote(saved);
-    setCommentsOpen(true);
+    setWorkspaceView("notebook");
   }
 
   async function saveComment() {
@@ -775,6 +777,7 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
         page_start: pageStart,
         page_end: pageEnd,
         title: `${actionLabel(action)} · p${excerpt.page}`,
+        context_text: excerpt.text,
       });
       const detail = await apiGet<{ content_json: Record<string, unknown>; artifact_type: string }>(
         `/ai/artifacts/${created.artifact_id}`
@@ -810,12 +813,13 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
 
   async function onRecognizeInk(imageBase64: string, mode: "text" | "math") {
     try {
-      const res = await apiPost<{ text: string; latex?: string | null }>("/ai/handwriting", {
-        image_base64: imageBase64,
-        mode,
-      });
-      setInkDraft(res.text || "");
+      const res = await recognizeHandwriting(imageBase64, mode);
+      const next = res.text || "";
+      setInkDraft(next);
       setInkLatex(res.latex || null);
+      if (activeExcerpt && next) {
+        setCommentDraft((prev) => (prev.trim() ? `${prev.trim()} ${next}` : next));
+      }
     } catch (e) {
       setError(toErrorMessage(e));
     }
@@ -900,7 +904,15 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
 
         {action === "comment" ? (
           <>
-            <textarea value={commentDraft} onChange={(e) => setCommentDraft(e.target.value)} rows={4} placeholder="Your comment…" />
+            <textarea
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              rows={4}
+              placeholder="Your comment…"
+              spellCheck
+              autoCorrect="on"
+              autoCapitalize="sentences"
+            />
             <button type="button" disabled={busy || !commentDraft.trim()} onClick={saveComment}>
               Save comment & continue
             </button>
@@ -1226,6 +1238,14 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                 >
                   Bookmark
                 </button>
+                <button
+                  type="button"
+                  className={workspaceView === "notebook" ? "isActive" : ""}
+                  onClick={() => setWorkspaceView((v) => (v === "resource" ? "notebook" : "resource"))}
+                  title="Switch between the textbook and your study notebook"
+                >
+                  {workspaceView === "resource" ? "Open notebook" : "Back to resource"}
+                </button>
                 {bookmark ? (
                   <span className="studyBookmarkChip" title={bookmark.snippet || undefined}>
                     Saved p{bookmark.page}
@@ -1287,114 +1307,116 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                 </div>
               ) : null}
 
-              <div className="studyWorkspaceBody">
-                <div>
-                  <div
-                    className="studyDocPane"
-                    style={hideSource ? { opacity: 0.2, pointerEvents: "none" } : undefined}
-                    onContextMenu={(e) => {
-                      const sel = window.getSelection()?.toString().trim() || selectedText || activeExcerpt?.text || "";
-                      if (!sel) return;
-                      e.preventDefault();
-                      setSelectedText(sel);
-                      setMenu({ x: e.clientX, y: e.clientY, text: sel, mode: "context" });
-                    }}
-                  >
-                    {isPdf && pdfData ? (
-                      <PdfReader
-                        data={pdfData}
-                        page={page}
-                        scale={scale}
-                        highlightQuery={findOpen ? findQuery : ""}
-                        onPageCount={setPageCount}
-                        onTextSelect={({ text, x, y, showMenu }) => {
-                          setSelectedText(text);
-                          if (showMenu) {
-                            setMenu({ x, y, text, mode: "select" });
-                          }
-                        }}
-                        onClearSelect={() => {
-                          setMenu(null);
-                        }}
-                      />
-                    ) : isPdf && pdfLoadError ? (
-                      <div className="studyPdfError">Couldn’t download PDF ({pdfLoadError}).</div>
-                    ) : isPdf ? (
-                      <div className="studyPdfLoading">Loading PDF…</div>
-                    ) : isPlainText && textPreview != null ? (
-                      <div className="studyTextDoc">
-                        {textPreview.trim().length < 220 ? (
-                          <div className="studyPdfError" style={{ marginBottom: 12 }}>
-                            This Canvas page is only a filename stub — the embedded PDF isn’t synced yet.
-                            Reconnect Canvas on Courses → Sync now, then re-open this reading (or pick a PDF
-                            from the Textbook / reading list).
-                          </div>
-                        ) : null}
-                        <pre
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            margin: 0,
-                            color: "#f9fafb",
-                            fontFamily: "ui-sans-serif, system-ui, sans-serif",
-                            fontSize: 15,
-                            lineHeight: 1.5,
+              <div className={`studyWorkspaceBody${workspaceView === "notebook" ? " isNotebookView" : ""}`}>
+                {workspaceView === "resource" ? (
+                  <div>
+                    <div
+                      className="studyDocPane"
+                      style={hideSource ? { opacity: 0.2, pointerEvents: "none" } : undefined}
+                      onContextMenu={(e) => {
+                        const sel = window.getSelection()?.toString().trim() || selectedText || activeExcerpt?.text || "";
+                        if (!sel) return;
+                        e.preventDefault();
+                        setSelectedText(sel);
+                        setMenu({ x: e.clientX, y: e.clientY, text: sel, mode: "context" });
+                      }}
+                    >
+                      {isPdf && pdfData ? (
+                        <PdfReader
+                          data={pdfData}
+                          page={page}
+                          scale={scale}
+                          highlightQuery={findOpen ? findQuery : ""}
+                          onPageCount={setPageCount}
+                          onTextSelect={({ text, x, y, showMenu }) => {
+                            setSelectedText(text);
+                            if (showMenu) {
+                              setMenu({ x, y, text, mode: "select" });
+                            }
                           }}
-                          onMouseUp={(e) => {
-                            const sel = window.getSelection()?.toString().trim() || "";
-                            if (!sel) return;
-                            setSelectedText(sel);
-                            setMenu({ x: e.clientX, y: e.clientY, text: sel, mode: "select" });
+                          onClearSelect={() => {
+                            setMenu(null);
                           }}
-                        >
-                          {textPreview}
-                        </pre>
-                      </div>
-                    ) : (
-                      <EmptyState message="Select a PDF textbook / reading above." />
-                    )}
+                        />
+                      ) : isPdf && pdfLoadError ? (
+                        <div className="studyPdfError">Couldn’t download PDF ({pdfLoadError}).</div>
+                      ) : isPdf ? (
+                        <div className="studyPdfLoading">Loading PDF…</div>
+                      ) : isPlainText && textPreview != null ? (
+                        <div className="studyTextDoc">
+                          {textPreview.trim().length < 220 ? (
+                            <div className="studyPdfError" style={{ marginBottom: 12 }}>
+                              This Canvas page is only a filename stub — the embedded PDF isn’t synced yet.
+                              Reconnect Canvas on the Dashboard → Sync now, then re-open this reading.
+                            </div>
+                          ) : null}
+                          <pre
+                            style={{
+                              whiteSpace: "pre-wrap",
+                              margin: 0,
+                              color: "#f9fafb",
+                              fontFamily: "ui-sans-serif, system-ui, sans-serif",
+                              fontSize: 15,
+                              lineHeight: 1.5,
+                            }}
+                            onMouseUp={(e) => {
+                              const sel = window.getSelection()?.toString().trim() || "";
+                              if (!sel) return;
+                              setSelectedText(sel);
+                              setMenu({ x: e.clientX, y: e.clientY, text: sel, mode: "select" });
+                            }}
+                          >
+                            {textPreview}
+                          </pre>
+                        </div>
+                      ) : (
+                        <EmptyState message="Select a PDF textbook / reading above." />
+                      )}
+                    </div>
+                    <div className="studyProgressStrip">{progressSummary}</div>
                   </div>
-                  <div className="studyProgressStrip">{progressSummary}</div>
-                </div>
+                ) : (
+                  <div className="studyNotebookPane">
+                    <StudyNotebook
+                      excerpts={excerpts}
+                      activeExcerptId={activeExcerptId}
+                      paperStyle={paperStyle}
+                      onPaperStyleChange={setPaperStyle}
+                      onSelectExcerpt={(id) => {
+                        setActiveExcerptId(id);
+                        const ex = excerpts.find((e) => e.id === id);
+                        if (ex) {
+                          setSelectedText(ex.text);
+                          setCommentDraft(ex.comment || "");
+                          goToPage(ex.page);
+                        }
+                      }}
+                      onRecognizeInk={onRecognizeInk}
+                      inkDisabled={false}
+                      commentDraft={commentDraft}
+                      onCommentDraftChange={setCommentDraft}
+                      onSaveComment={saveComment}
+                      saveBusy={busy}
+                    />
+                    {inkDraft ? (
+                      <div className="studySideCard" style={{ margin: 12 }}>
+                        <div className="studySideTitle">Recognized ink</div>
+                        <textarea
+                          value={inkDraft}
+                          onChange={(e) => setInkDraft(e.target.value)}
+                          rows={3}
+                          spellCheck
+                          autoCorrect="on"
+                        />
+                        <button type="button" disabled={busy} onClick={saveInkNote}>
+                          Save ink to notes
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
 
                 <aside className="studySidePane">
-                  <div className="studySideCard">
-                    <div className="studySideTitle">Excerpts</div>
-                    {excerpts.length === 0 ? (
-                      <div className="studySideMuted">No highlights yet.</div>
-                    ) : (
-                      <div className="studyAnnotationList">
-                        {excerpts.map((ex) => {
-                          const done = ex.steps.filter((s) => s.status === "done").length;
-                          return (
-                            <button
-                              key={ex.id}
-                              type="button"
-                              className={`studyExcerptChip${ex.id === activeExcerptId ? " isActive" : ""}`}
-                              onClick={() => {
-                                setActiveExcerptId(ex.id);
-                                setSelectedText(ex.text);
-                                goToPage(ex.page);
-                              }}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                setActiveExcerptId(ex.id);
-                                setMenu({ x: e.clientX, y: e.clientY, text: ex.text, mode: "context" });
-                              }}
-                            >
-                              <div className="studyQuote">
-                                {ex.text.slice(0, 100)}
-                                {ex.text.length > 100 ? "…" : ""}
-                              </div>
-                              <div className="studySideMuted">
-                                p{ex.page} · {done}/{ex.steps.length} steps
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
                   {activeExcerpt ? (
                     <div className="studySideCard">
                       <div className="studySideTitle">Checklist</div>
@@ -1437,38 +1459,6 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                   ) : null}
 
                   {renderActionPanel()}
-
-                  <div className="studySideCard">
-                    <div className="studySideTitle">Ink notes</div>
-                    <InkPad disabled={!aiStatus?.configured} onRecognize={onRecognizeInk} />
-                    {inkDraft ? (
-                      <>
-                        <textarea value={inkDraft} onChange={(e) => setInkDraft(e.target.value)} rows={3} />
-                        <button type="button" disabled={busy} onClick={saveInkNote}>
-                          Save ink to notes
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-
-                  <details className="studySideCard" open={commentsOpen} onToggle={(e) => setCommentsOpen((e.target as HTMLDetailsElement).open)}>
-                    <summary className="studySideTitle" style={{ cursor: "pointer" }}>
-                      Comments / history
-                    </summary>
-                    <div className="studySideMuted" style={{ marginTop: 8 }}>
-                      Notes save into the Section notebook for the selected chapter when possible.
-                    </div>
-                    {excerpts.slice(0, 20).map((ex) => (
-                      <div key={ex.id} className="studyAnnotationItem">
-                        <div className="studyQuote">
-                          {ex.text.slice(0, 120)}
-                          {ex.text.length > 120 ? "…" : ""}
-                        </div>
-                        {ex.comment ? <div>{ex.comment}</div> : null}
-                        {ex.summary ? <div className="studySideMuted">{ex.summary}</div> : null}
-                      </div>
-                    ))}
-                  </details>
                 </aside>
               </div>
             </div>

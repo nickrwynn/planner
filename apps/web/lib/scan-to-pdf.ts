@@ -1,5 +1,7 @@
 /** Build a multi-page PDF from JPEG page images (no external PDF deps). */
 
+import { ocrScanPage, type OcrWord } from "./scan-ocr";
+
 function enc(str: string): Uint8Array {
   return new TextEncoder().encode(str);
 }
@@ -8,7 +10,29 @@ export type ScanPage = {
   jpeg: Uint8Array;
   width: number;
   height: number;
+  ocrWords?: OcrWord[];
 };
+
+function escapePdfText(text: string): string {
+  return text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+/** Invisible text overlay so pdf.js can select/highlight scanned pages. */
+function buildOcrContentStream(pageWidth: number, pageHeight: number, words: OcrWord[]): string {
+  if (!words.length) return "";
+  const lines: string[] = ["q", "BT", "/F1 1 Tf", "3 Tr"];
+  for (const w of words) {
+    const fontSize = Math.max(6, Math.min(24, (w.y1 - w.y0) * 0.85));
+    const x = w.x0;
+    const y = pageHeight - w.y1;
+    const safe = escapePdfText(w.text);
+    if (!safe) continue;
+    lines.push(`${fontSize.toFixed(2)} 0 0 ${fontSize.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
+    lines.push(`(${safe}) Tj`);
+  }
+  lines.push("ET", "Q");
+  return `${lines.join("\n")}\n`;
+}
 
 function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = 0.82): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -124,7 +148,7 @@ export function buildPdfFromScanPages(pages: ScanPage[]): Blob {
 
   const pageCount = pages.length;
   const pageIds: number[] = [];
-  let nextId = 3;
+  let nextId = 4;
   const meta: { pageId: number; contentId: number; imageId: number }[] = [];
   for (let i = 0; i < pageCount; i += 1) {
     const pageId = nextId++;
@@ -138,16 +162,19 @@ export function buildPdfFromScanPages(pages: ScanPage[]): Blob {
   addObject(2, [
     `<< /Type /Pages /Count ${pageCount} /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] >>`,
   ]);
+  addObject(3, ["<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"]);
 
   for (let i = 0; i < pageCount; i += 1) {
     const page = pages[i];
     const { pageId, contentId, imageId } = meta[i];
     const w = page.width;
     const h = page.height;
-    const content = `q\n${w} 0 0 ${h} 0 0 cm\n/Im${i} Do\nQ\n`;
+    const imageDraw = `q\n${w} 0 0 ${h} 0 0 cm\n/Im${i} Do\nQ\n`;
+    const ocrLayer = page.ocrWords?.length ? buildOcrContentStream(w, h, page.ocrWords) : "";
+    const content = `${imageDraw}${ocrLayer}`;
 
     addObject(pageId, [
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im${i} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /Font << /F1 3 0 R >> /XObject << /Im${i} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`,
     ]);
     addObject(contentId, [`<< /Length ${content.length} >>\nstream\n`, content, `endstream`]);
     addObject(imageId, [
@@ -177,18 +204,35 @@ function yieldFrame(): Promise<void> {
   });
 }
 
-export async function filesToScanPdf(files: Blob[], title = "Scan"): Promise<File> {
+export async function filesToScanPdf(
+  files: Blob[],
+  title = "Scan",
+  opts?: { onProgress?: (message: string) => void; runOcr?: boolean }
+): Promise<File> {
   if (!files.length) throw new Error("Add at least one page");
+  const runOcr = opts?.runOcr !== false;
   const pages: ScanPage[] = [];
   for (let i = 0; i < files.length; i += 1) {
     try {
-      pages.push(await imageFileToScanPage(files[i]));
+      opts?.onProgress?.(`Processing page ${i + 1} of ${files.length}…`);
+      const page = await imageFileToScanPage(files[i]);
+      if (runOcr) {
+        opts?.onProgress?.(`OCR page ${i + 1} of ${files.length}…`);
+        try {
+          const ocr = await ocrScanPage(page.jpeg, opts?.onProgress);
+          page.ocrWords = ocr.words;
+        } catch {
+          // Still produce PDF; highlighting may be limited on this page.
+        }
+      }
+      pages.push(page);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to process photo";
       throw new Error(`Page ${i + 1}: ${msg}`);
     }
     await yieldFrame();
   }
+  opts?.onProgress?.("Building searchable PDF…");
   const pdf = buildPdfFromScanPages(pages);
   const safe = title.replace(/[^\w\- ]+/g, "").trim() || "Scan";
   const filename = `${safe}.pdf`;

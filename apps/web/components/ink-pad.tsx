@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
 type InkPadProps = {
   disabled?: boolean;
+  penOnly?: boolean;
   onRecognize: (imageBase64: string, mode: "text" | "math") => Promise<void>;
 };
 
@@ -52,7 +52,7 @@ function cropInkDataUrl(canvas: HTMLCanvasElement): string {
   return out.toDataURL("image/jpeg", 0.82);
 }
 
-export function InkPad({ disabled, onRecognize }: InkPadProps) {
+export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,11 +95,12 @@ export function InkPad({ disabled, onRecognize }: InkPadProps) {
     if (idleTimer.current) clearTimeout(idleTimer.current);
     idleTimer.current = setTimeout(() => {
       void recognize({ auto: true });
-    }, 350);
+    }, 120);
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (disabled) return;
+    if (penOnly && e.pointerType === "touch") return;
     if (idleTimer.current) clearTimeout(idleTimer.current);
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -163,7 +164,7 @@ export function InkPad({ disabled, onRecognize }: InkPadProps) {
     <div className="studyInkPad">
       <div className="studyInkToolbar">
         <span className="studySideTitle" style={{ margin: 0 }}>
-          Ink pad
+          Handwriting
         </span>
         <div className="studyInkModes">
           <button

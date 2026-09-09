@@ -557,6 +557,7 @@ def flashcards(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_r
             section_keys=payload.section_keys,
             page_start=payload.page_start,
             page_end=payload.page_end,
+            context_text=payload.context_text,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -585,6 +586,7 @@ def quizzes(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_requ
             section_keys=payload.section_keys,
             page_start=payload.page_start,
             page_end=payload.page_end,
+            context_text=payload.context_text,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -613,6 +615,7 @@ def sample_problems(payload: GenerateBaseRequest, db: Session = Depends(get_db_f
             section_keys=payload.section_keys,
             page_start=payload.page_start,
             page_end=payload.page_end,
+            context_text=payload.context_text,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e

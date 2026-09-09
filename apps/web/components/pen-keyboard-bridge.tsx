@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { recognizeHandwriting } from "../lib/handwriting-recognize";
 import { InkPad } from "./ink-pad";
 
 export type InputMode = "auto" | "pen" | "keyboard";
@@ -119,10 +120,12 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
         mode === "pen" || (mode === "auto" && e.pointerType === "pen");
 
       if (wantPen) {
-        // Keep focus for insertion, but open pen sheet instead of fighting the OS keyboard.
         targetRef.current = editable;
         setPenSheetOpen(true);
-      } else if (mode === "keyboard" || (mode === "auto" && e.pointerType !== "pen")) {
+      } else if (mode === "auto" && e.pointerType === "touch") {
+        setPenSheetOpen(false);
+        editable.focus();
+      } else if (mode === "keyboard") {
         setPenSheetOpen(false);
       }
     }
@@ -132,11 +135,7 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
   }, [mode]);
 
   const onRecognize = useCallback(async (imageBase64: string, recognizeMode: "text" | "math") => {
-    const { apiPost } = await import("../lib/api");
-    const res = await apiPost<{ text: string; latex?: string | null }>("/ai/handwriting", {
-      image_base64: imageBase64,
-      mode: recognizeMode,
-    });
+    const res = await recognizeHandwriting(imageBase64, recognizeMode);
     const text = (recognizeMode === "math" && res.latex ? res.latex : res.text || "").trim();
     if (!text) return;
     const el = targetRef.current;
@@ -186,7 +185,7 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
           <p className="penBridgeHint">
             Auto mode: Pencil opens ink · finger/tap opens the keyboard. Recognized text goes into the focused field.
           </p>
-          <InkPad onRecognize={onRecognize} />
+          <InkPad penOnly={mode === "auto"} onRecognize={onRecognize} />
         </div>
       ) : null}
     </InputModeContext.Provider>

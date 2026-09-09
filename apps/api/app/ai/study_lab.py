@@ -31,11 +31,16 @@ _STUDY_ARTIFACT_NONEMPTY = (
 )
 
 
-def _sources_block(chunks) -> str:
+def _sources_block(chunks, *, context_text: str | None = None) -> str:
+    parts: list[str] = []
+    if context_text and context_text.strip():
+        parts.append(f"[Highlight]\n{context_text.strip()}")
     lines: list[str] = []
     for i, c in enumerate(chunks, start=1):
         lines.append(f"[S{i}] resource={c.resource_id} page={c.page_number or '-'} chunk={c.chunk_index}\n{c.text}")
-    return "\n\n".join(lines) if lines else "(no sources found)"
+    if lines:
+        parts.append("\n\n".join(lines))
+    return "\n\n".join(parts) if parts else "(no sources found)"
 
 
 def _citations_from_chunks(chunks) -> list[Citation]:
@@ -163,6 +168,7 @@ def _retrieve_for_artifact(
     page_start: int | None = None,
     page_end: int | None = None,
     k: int = 12,
+    context_text: str | None = None,
 ):
     ranges, scope_label, scope_meta = _resolve_scope(
         db,
@@ -182,11 +188,15 @@ def _retrieve_for_artifact(
         k=k,
         page_ranges=ranges,
     )
-    if not chunks and ranges:
-        raise ValueError(
-            f"No indexed text found in page range for scope '{scope_label}'. "
-            "Reindex the PDF or pick a different section."
-        )
+    if not chunks and not (context_text and context_text.strip()):
+        if ranges:
+            raise ValueError(
+                f"No indexed text found in page range for scope '{scope_label}'. "
+                "Reindex the PDF or pick a different section."
+            )
+        raise ValueError("No indexed text found for this resource. Highlight text or reindex the PDF.")
+    if context_text and context_text.strip():
+        scope_meta = {**scope_meta, "highlight_context": True}
     return chunks, scope_label, scope_meta
 
 
@@ -258,6 +268,7 @@ def generate_flashcards(
     section_keys: list[str] | None = None,
     page_start: int | None = None,
     page_end: int | None = None,
+    context_text: str | None = None,
 ) -> StudyArtifact:
     _ensure_llm()
     chunks, scope_label, scope_meta = _retrieve_for_artifact(
@@ -270,8 +281,9 @@ def generate_flashcards(
         page_start=page_start,
         page_end=page_end,
         k=12,
+        context_text=context_text,
     )
-    sources = _sources_block(chunks)
+    sources = _sources_block(chunks, context_text=context_text)
     system = (
         "You generate flashcards grounded in sources. Output STRICT JSON only. "
         + _FRONT_MATTER_RULE
@@ -313,6 +325,7 @@ def generate_quiz(
     section_keys: list[str] | None = None,
     page_start: int | None = None,
     page_end: int | None = None,
+    context_text: str | None = None,
 ) -> StudyArtifact:
     _ensure_llm()
     chunks, scope_label, scope_meta = _retrieve_for_artifact(
@@ -325,8 +338,9 @@ def generate_quiz(
         page_start=page_start,
         page_end=page_end,
         k=14,
+        context_text=context_text,
     )
-    sources = _sources_block(chunks)
+    sources = _sources_block(chunks, context_text=context_text)
     system = (
         "You generate quiz items grounded in sources. Output STRICT JSON only. "
         + _FRONT_MATTER_RULE
@@ -368,6 +382,7 @@ def generate_sample_problems(
     section_keys: list[str] | None = None,
     page_start: int | None = None,
     page_end: int | None = None,
+    context_text: str | None = None,
 ) -> StudyArtifact:
     _ensure_llm()
     chunks, scope_label, scope_meta = _retrieve_for_artifact(
@@ -380,8 +395,9 @@ def generate_sample_problems(
         page_start=page_start,
         page_end=page_end,
         k=14,
+        context_text=context_text,
     )
-    sources = _sources_block(chunks)
+    sources = _sources_block(chunks, context_text=context_text)
     system = (
         "You generate sample problems grounded in sources. Output STRICT JSON only. "
         + _FRONT_MATTER_RULE

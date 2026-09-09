@@ -16,6 +16,8 @@ class GenerateBaseRequest(BaseModel):
     section_keys: list[str] = Field(default_factory=list, max_length=40)
     page_start: int | None = Field(default=None, ge=1)
     page_end: int | None = Field(default=None, ge=1)
+    # Highlighted passage from StudyFlows — used when indexed chunks are missing (e.g. scans).
+    context_text: str | None = Field(default=None, max_length=12000)
 
 
 class SummarySection(BaseModel):

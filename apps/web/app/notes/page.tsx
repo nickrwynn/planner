@@ -99,6 +99,38 @@ export default function NotesPage() {
     }
   }
 
+  async function createBlankNote() {
+    setError(null);
+    setIsLoading(true);
+    try {
+      let nbId = notebookId;
+      if (!nbId) {
+        const nb = await apiPost<Notebook>("/notebooks", { title: "Quick notes", course_id: null });
+        nbId = nb.id;
+        setNotebookId(nbId);
+      }
+      const doc = await apiPost<NoteDocument>("/note-documents", {
+        notebook_id: nbId,
+        title: `Note ${new Date().toLocaleString()}`,
+        note_type: "typed",
+      });
+      const page = await apiPost<NotePage>("/note-pages", {
+        note_document_id: doc.id,
+        page_index: 0,
+        text: "",
+      });
+      setDocId(doc.id);
+      setSelectedPageId(page.id);
+      setText("");
+      setHandwritingEnabled(false);
+      await refresh();
+    } catch (e) {
+      setError(toErrorMessage(e));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function createPage() {
     if (!docId) return;
     setError(null);
@@ -179,7 +211,15 @@ export default function NotesPage() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <h1 style={{ margin: 0 }}>Notes</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <h1 style={{ margin: 0 }}>Notes</h1>
+        <button type="button" onClick={() => void createBlankNote()} style={{ padding: "8px 14px" }} disabled={isLoading}>
+          New blank note
+        </button>
+      </div>
+      <div style={{ fontSize: 13, color: "#555" }}>
+        Start from scratch here, or let StudyFlows append notes when you highlight in a reading.
+      </div>
       {error ? <ErrorState message={error} onRetry={refresh} /> : null}
       {isLoading ? <LoadingState label="Loading notes..." /> : null}
 
@@ -301,6 +341,9 @@ export default function NotesPage() {
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={12}
+              spellCheck
+              autoCorrect="on"
+              autoCapitalize="sentences"
               style={{ width: "100%", padding: 10, fontFamily: "inherit" }}
             />
             <div style={{ height: 8 }} />

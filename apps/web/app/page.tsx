@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, LoadingState } from "../components/async-state";
+import { CanvasConnectPanel } from "../components/canvas-connect-panel";
 import { apiGet, toErrorMessage } from "../lib/api";
 import { applyTheme, getStoredTheme, THEME_PRESETS, type ThemeId } from "../lib/theme";
 import {
@@ -110,6 +111,8 @@ export default function Home() {
         <h1 style={{ margin: 0 }}>Dashboard</h1>
         <p className="pageIntro">Management overview — what needs attention, what to do next.</p>
       </div>
+
+      <CanvasConnectPanel />
 
       <div className="card" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ fontWeight: 600 }}>Style preset</div>
@@ -304,7 +307,7 @@ export default function Home() {
               </Link>
             </div>
             <div style={{ color: "#6b7280", fontSize: 12 }}>
-              Canvas sync is available as a placeholder under Courses. Ask lives in the right pane.
+              Canvas sync is configured above. Ask lives in the right pane.
             </div>
           </div>
         </>

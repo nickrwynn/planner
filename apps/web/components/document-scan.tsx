@@ -52,7 +52,8 @@ export function DocumentScan({ disabled, onPdfReady }: DocumentScanProps) {
     try {
       const pdf = await filesToScanPdf(
         pages.map((p) => p.file),
-        title.trim() || "Scan"
+        title.trim() || "Scan",
+        { onProgress: setProgress, runOcr: true }
       );
       setProgress("Uploading…");
       await onPdfReady(pdf);
@@ -70,7 +71,7 @@ export function DocumentScan({ disabled, onPdfReady }: DocumentScanProps) {
     <div className="docScan">
       <div style={{ fontWeight: 600 }}>Scan pages to PDF</div>
       <div style={{ fontSize: 13, color: "var(--muted)" }}>
-        Take a photo or pick from Photos — we’ll build a PDF resource.
+        Take a photo or pick from Photos — we run on-device OCR so highlights work in StudyFlows.
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input

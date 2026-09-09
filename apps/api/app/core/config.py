@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     canvas_oauth_client_id: str = ""
     canvas_oauth_client_secret: str = ""
     canvas_oauth_redirect_uri: str = "http://localhost:8000/integrations/canvas/oauth/callback"
-    canvas_oauth_success_url: str = "http://localhost:3000/courses?canvas=connected"
+    canvas_oauth_success_url: str = "http://localhost:3000/?canvas=connected"
     canvas_oauth_failure_url: str = "http://localhost:3000/courses?canvas=error"
     canvas_default_base_url: str = "https://canvas.tamu.edu"
     # Optional space-separated Canvas OAuth scopes. Leave empty for unscoped developer keys.
