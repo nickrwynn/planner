@@ -12,9 +12,8 @@ jobs:
     env:
       NODE_VERSION: "22"
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # mystudyflow.app is OpenDNS-blocked on TAMU Wi‑Fi. Pin a live trycloudflare tunnel
-      # until CAP_SERVER_URL secret points at an unblocked always-on host.
-      CAP_SERVER_URL: https://asian-spice-refrigerator-sunrise.trycloudflare.com
+      # Always-on AWS Lightsail (HTTPS via sslip.io). Not blocked by TAMU OpenDNS.
+      CAP_SERVER_URL: https://54.174.177.206.sslip.io
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,7 +92,7 @@ jobs:
               raise SystemExit("Main.storyboard missing BridgeViewController")
           storyboard.write_text(text)
 
-          import json
+          import json, os
           cfg_path = Path("apps/web/ios/App/App/capacitor.config.json")
           cfg = json.loads(cfg_path.read_text())
           classes = cfg.get("packageClassList") or []
@@ -101,8 +100,23 @@ jobs:
               if name not in classes:
                   classes.append(name)
           cfg["packageClassList"] = classes
+          # Force remote URL — do not ship a blocked mystudyflow.app host.
+          url = (os.environ.get("CAP_SERVER_URL") or "").strip()
+          if not url.startswith("https://"):
+              raise SystemExit(f"CAP_SERVER_URL missing/invalid: {url!r}")
+          if "mystudyflow.app" in url:
+              raise SystemExit(f"CAP_SERVER_URL is OpenDNS-blocked on TAMU Wi-Fi: {url}")
+          cfg.setdefault("server", {})["url"] = url
+          cfg["server"]["cleartext"] = False
           cfg_path.write_text(json.dumps(cfg, indent="\t") + "\n")
           print("storyboard + packageClassList OK")
+          print(f"capacitor server.url = {cfg['server']['url']}")
+          PY
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path("apps/web/ios/App/App/capacitor.config.json").read_text())
+          print("VERIFY", cfg.get("server"))
           PY
 
       - name: Preflight CanvasLogin wiring

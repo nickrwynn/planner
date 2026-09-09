@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
     // TestFlight loads this remote URL. mystudyflow.app is blocked on TAMU OpenDNS —
     // use a trycloudflare tunnel (or other unblocked HTTPS) until a clean domain/VPS.
     // CI sets CAP_SERVER_URL; keep this default in sync with the live tunnel.
-    url: process.env.CAP_SERVER_URL || "https://asian-spice-refrigerator-sunrise.trycloudflare.com",
+    url: process.env.CAP_SERVER_URL || "https://54.174.177.206.sslip.io",
     cleartext: false
   },
   ios: {
