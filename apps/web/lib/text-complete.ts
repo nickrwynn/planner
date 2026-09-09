@@ -8,6 +8,7 @@
  *     with a hard timeout so a slow network never blocks typing.
  */
 
+import { isCloudAiAvailable } from "./ai-availability";
 import { completeWordOnDevice } from "./text-assist-native";
 import { predictContinuation } from "./text-predict";
 
@@ -22,25 +23,6 @@ export type Completion = {
 const CLOUD_TIMEOUT_MS = 1200;
 
 const EMPTY: Completion = { text: "", source: "none" };
-
-let cloudAvailable: boolean | null = null;
-
-/** Cached so we do not probe /ai/status on every keystroke. */
-async function isCloudAvailable(): Promise<boolean> {
-  if (cloudAvailable !== null) return cloudAvailable;
-  try {
-    const { apiGet } = await import("./api");
-    const status = await apiGet<{ configured: boolean }>("/ai/status");
-    cloudAvailable = Boolean(status?.configured);
-  } catch {
-    cloudAvailable = false;
-  }
-  return cloudAvailable;
-}
-
-export function resetCloudAvailability() {
-  cloudAvailable = null;
-}
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   return new Promise((resolve) => {
@@ -84,7 +66,7 @@ export async function suggestFromCloud(
   opts?: { courseId?: string; signal?: AbortSignal }
 ): Promise<Completion> {
   if (textBeforeCaret.trim().length < 12) return EMPTY;
-  if (!(await isCloudAvailable())) return EMPTY;
+  if (!(await isCloudAiAvailable())) return EMPTY;
 
   const { apiPost } = await import("./api");
   const req = apiPost<{ completion: string }>("/ai/complete", {

@@ -1,3 +1,4 @@
+import { isCloudAiAvailable } from "./ai-availability";
 import { canRecognizeOnDevice, recognizeOnDevice } from "./handwriting-native";
 import { ocrInkImage } from "./scan-ocr";
 
@@ -13,7 +14,11 @@ export type HandwritingResult = {
  * Recognition order:
  *  1. Apple Vision on-device (iPad app) — instant, no network, no API key.
  *  2. Tesseract in the browser — on-device fallback for web.
- *  3. Cloud LLM — only for math (LaTeX) or when nothing was recognized locally.
+ *  3. Cloud LLM — math only, and only when a key is actually configured.
+ *
+ * Math has no on-device LaTeX engine yet, so it falls back to the cloud. When
+ * the cloud is unavailable the on-device plain text is returned rather than
+ * nothing.
  */
 export async function recognizeHandwriting(
   imageBase64: string,
@@ -24,9 +29,10 @@ export async function recognizeHandwriting(
     return { text: device, source: "device" };
   }
 
+  let local = "";
   if (mode === "text" && !canRecognizeOnDevice()) {
     try {
-      const local = await ocrInkImage(imageBase64);
+      local = await ocrInkImage(imageBase64);
       if (local.length >= 1) {
         return { text: local, source: "local" };
       }
@@ -35,19 +41,19 @@ export async function recognizeHandwriting(
     }
   }
 
-  // Math wants LaTeX, which on-device OCR cannot produce. Try the cloud, but
-  // never lose on-device text if the LLM is unavailable.
-  try {
-    const { apiPost } = await import("./api");
-    const res = await apiPost<{ text: string; latex?: string | null }>("/ai/handwriting", {
-      image_base64: imageBase64,
-      mode,
-    });
-    const text = (mode === "math" && res.latex ? res.latex : res.text || "").trim();
-    if (text) return { text, latex: res.latex, source: "cloud" };
-  } catch (err) {
-    if (!device) throw err;
+  if (await isCloudAiAvailable()) {
+    try {
+      const { apiPost } = await import("./api");
+      const res = await apiPost<{ text: string; latex?: string | null }>("/ai/handwriting", {
+        image_base64: imageBase64,
+        mode,
+      });
+      const text = (mode === "math" && res.latex ? res.latex : res.text || "").trim();
+      if (text) return { text, latex: res.latex, source: "cloud" };
+    } catch (err) {
+      if (!device && !local) throw err;
+    }
   }
 
-  return { text: device || "", source: device ? "device" : "local" };
+  return { text: device || local || "", source: device ? "device" : "local" };
 }
