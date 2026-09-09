@@ -493,6 +493,7 @@ def create_and_enqueue_parse(
     user: User,
     resource: Resource,
     idempotency_key: str | None = None,
+    enqueue: bool = True,
 ) -> BackgroundJob:
     if idempotency_key:
         existing = (
@@ -511,6 +512,8 @@ def create_and_enqueue_parse(
             .first()
         )
         if existing and existing.status in {"queued", "running", "done"}:
+            if enqueue and existing.status == "queued":
+                enqueue_job(redis, existing)
             return existing
 
     try:
@@ -535,7 +538,8 @@ def create_and_enqueue_parse(
         if existing is None:
             raise
         job = existing
-    enqueue_job(redis, job)
+    if enqueue:
+        enqueue_job(redis, job)
     return job
 
 

@@ -1,4 +1,4 @@
-## Academic OS (MVP)
+## StudyFlows (MVP)
 
 This monorepo is a **usable MVP** for an academic organizer with a resource ingestion pipeline, search, AI ask pane, study lab, and notes.
 
@@ -18,6 +18,25 @@ The Next.js app sends `X-User-Id` when you set the same UUID in both places so t
 - **Server components (e.g. dashboard):** `DEV_USER_ID` or `API_USER_ID` (same UUID as above).
 
 After `make seed`, inspect the `users` table or use the API to list users and copy an `id`. If these variables are unset, the API falls back to the first user (single-user dev).
+
+### Canvas sync (OAuth2)
+
+1. Get a Canvas **developer key** from your school admin (client id + secret). Set redirect URI to `http://localhost:8000/integrations/canvas/oauth/callback`.
+2. Put `CANVAS_OAUTH_CLIENT_ID` / `CANVAS_OAUTH_CLIENT_SECRET` in `.env` (see also `CANVAS_DEFAULT_BASE_URL`).
+3. Restart API, open **Courses** → **Connect with Canvas OAuth** → approve → **Sync now**.
+
+Access tokens expire hourly; refresh tokens are stored encrypted (`INTEGRATIONS_SECRET` or `AUTH_JWT_SECRET`). Details: [`docs/product/canvas-integration-rd.md`](docs/product/canvas-integration-rd.md).
+
+### Manual courses (Blackboard / Brightspace / other)
+
+LMS sync is Canvas-only today. On **Courses**, use **Add a course manually** (name, optional code/term). Then upload files or import from Google Drive on that course’s **Resources** page.
+
+### Google Drive import
+
+1. In Google Cloud Console, create an OAuth client and enable the **Google Drive API**.
+2. Set authorized redirect URI to `http://localhost:8000/integrations/google/oauth/callback`.
+3. Put `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` in `.env`, restart API.
+4. Open a course → **Resources** → **Connect Google Drive** → search/import PDFs, images, text, or Google Docs (exported as PDF).
 
 ## Repo layout
 
@@ -71,7 +90,7 @@ make migrate
 make seed
 ```
 
-See [`env.example`](env.example) for `OPENAI_API_KEY`, `EMBEDDINGS_PROVIDER`, and related AI settings.
+See [`env.example`](env.example) for `CURSOR_API_KEY`, `EMBEDDINGS_PROVIDER`, and related AI settings.
 
 ### AI and retrieval environment matrix
 
@@ -80,8 +99,7 @@ See [`env.example`](env.example) for `OPENAI_API_KEY`, `EMBEDDINGS_PROVIDER`, an
 | Keyword-only retrieval (default) | none | `GET /search` and `POST /ai/ask` use keyword ranking only. |
 | Semantic retrieval via OpenAI embeddings | `EMBEDDINGS_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_EMBEDDINGS_MODEL` (optional) | Chunk embeddings are generated during indexing; hybrid ranker uses vectors + keyword. |
 | Semantic retrieval via sentence-transformers | `EMBEDDINGS_PROVIDER=sentence-transformers`, `SENTENCE_TRANSFORMERS_MODEL` (optional) + local ML deps | Local embeddings in-process; useful without OpenAI keys but heavier runtime deps. |
-| Ask endpoint with LLM answer | `OPENAI_API_KEY` (and optional `OPENAI_CHAT_MODEL`) | `POST /ai/ask` returns model-generated answer with citations when chunks exist. |
-| Study lab generation endpoints | `OPENAI_API_KEY` | `POST /ai/summaries`, `/flashcards`, `/quizzes`, `/sample-problems` require LLM config and fail otherwise. |
+| Ask / Study Lab / handwriting (Cursor Auto) | `CURSOR_API_KEY` (optional `CURSOR_MODEL=auto` or `auto-smart`) | `POST /ai/ask`, study-lab generators, and `POST /ai/handwriting` use the Cursor SDK agent. |
 
 ### CORS environment guidance
 
@@ -96,9 +114,10 @@ See [`env.example`](env.example) for `OPENAI_API_KEY`, `EMBEDDINGS_PROVIDER`, an
 - `curl http://localhost:8000/health` returns JSON with `status: ok` and `postgres.ok=true`, `redis.ok=true`.
 - Dashboard at `http://localhost:3000` loads (tasks, resources, indexing failures if any).
 - **Ingestion:** Create a course, upload a small PDF via Resources → confirm `GET /resources/{id}` shows `index_status=done` (after worker runs), `GET /resources/{id}/jobs` shows a job with `status=done`, and `GET /resources/{id}/chunks` returns rows. Unsupported file types should show `index_status=skipped` (not `done`) with no chunks; `.txt` / `text/*` should index like plain text.
-- **Search / Ask:** `GET /search?q=...` returns hits; agent pane `POST /ai/ask` returns an answer (with citations when chunks exist).
+- **Search / Ask:** `GET /search?q=...` returns hits; agent pane `POST /ai/ask` with JSON `{ "message": "..." }` returns an answer (with citations when chunks exist).
 - **Conversations:** `GET /ai/conversations` and `GET /ai/conversations/{id}/messages` after a successful ask.
 - **Planner:** `GET /planner/next` returns a suggested task when open tasks exist.
+- **Notes pages:** create/update with `{ "text": "..." }` (stored as `extracted_text` on read).
 
 ## Implemented API routes (current)
 
@@ -111,7 +130,7 @@ See [`env.example`](env.example) for `OPENAI_API_KEY`, `EMBEDDINGS_PROVIDER`, an
 - **notebooks**: `GET /notebooks`, `POST /notebooks`, `GET /notebooks/{id}`, `PATCH /notebooks/{id}`, `DELETE /notebooks/{id}`
 - **notes**: `GET /notebooks/{id}/note-documents`, `POST /note-documents`, `GET /note-documents/{id}`, `PATCH /note-documents/{id}`, `DELETE /note-documents/{id}`, `GET /note-documents/{id}/pages`, `POST /note-pages`, `PATCH /note-pages/{id}`, `GET /note-pages/{id}`, `DELETE /note-pages/{id}`
 - **search**: `GET /search`
-- **ai**: `POST /ai/ask`, `GET /ai/conversations`, `GET /ai/conversations/{id}/messages`, `GET /ai/artifacts` (pagination: `limit`, `offset`), `GET /ai/artifacts/{id}`, `POST /ai/summaries`, `POST /ai/flashcards`, `POST /ai/quizzes`, `POST /ai/sample-problems`
+- **ai**: `POST /ai/ask` (body field `message`), `GET /ai/conversations`, `GET /ai/conversations/{id}/messages`, `GET /ai/artifacts` (pagination: `limit`, `offset`), `GET /ai/artifacts/{id}`, `POST /ai/summaries`, `POST /ai/flashcards`, `POST /ai/quizzes`, `POST /ai/sample-problems`
 
 ## Resource ingestion pipeline
 
@@ -183,6 +202,22 @@ make test-api
 ```
 
 Production operations runbook: [`docs/architecture/production-runbook.md`](docs/architecture/production-runbook.md)
+
+## iPad + TestFlight path (Linux-first)
+
+If you develop on Linux and do not have a physical Mac, use GitHub Actions macOS runners for iOS signing/upload:
+
+- Playbook: [`docs/product/ipad-testflight-linux-playbook.md`](docs/product/ipad-testflight-linux-playbook.md)
+- Acceptance checklist: [`docs/product/ipad-beta-acceptance-checklist.md`](docs/product/ipad-beta-acceptance-checklist.md)
+
+## Linux solo beta
+
+For local product validation before iOS:
+
+- Acceptance: [`docs/product/linux-beta-acceptance-checklist.md`](docs/product/linux-beta-acceptance-checklist.md)
+- Runbook: [`docs/product/linux-beta-verification-runbook.md`](docs/product/linux-beta-verification-runbook.md)
+- Gap log: [`docs/product/linux-beta-gap-log.md`](docs/product/linux-beta-gap-log.md)
+- Next roadmap: [`docs/product/linux-beta-next-roadmap.md`](docs/product/linux-beta-next-roadmap.md)
 
 ## Testing (API)
 

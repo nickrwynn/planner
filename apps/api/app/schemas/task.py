@@ -20,9 +20,11 @@ def _normalize_task_type(v: str | None) -> str | None:
 
 
 class TaskCreate(BaseModel):
-    course_id: UUID
+    course_id: UUID | None = None
     title: str = Field(min_length=1, max_length=300)
     description: str | None = None
+    purpose: str | None = None
+    logistics_json: dict | None = None
     task_type: str | None = None
     due_at: datetime | None = None
     weight: float | None = None
@@ -38,6 +40,8 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=300)
     description: str | None = None
+    purpose: str | None = None
+    logistics_json: dict | None = None
     task_type: str | None = None
     due_at: datetime | None = None
     weight: float | None = None
@@ -46,6 +50,7 @@ class TaskUpdate(BaseModel):
     status: str | None = None
     estimated_minutes: int | None = None
     priority_score: float | None = None
+    course_id: UUID | None = None
 
     _task_type_validator = field_validator("task_type", mode="before")(_normalize_task_type)
 
@@ -53,9 +58,11 @@ class TaskUpdate(BaseModel):
 class TaskRead(BaseModel):
     id: UUID
     user_id: UUID
-    course_id: UUID
+    course_id: UUID | None
     title: str
     description: str | None
+    purpose: str | None = None
+    logistics_json: dict | None = None
     task_type: str | None
     due_at: datetime | None
     weight: float | None
@@ -68,4 +75,3 @@ class TaskRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-

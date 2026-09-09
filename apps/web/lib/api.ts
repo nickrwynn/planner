@@ -12,8 +12,17 @@ function getApiAuthMode(): "dev" | "bearer" {
   return "dev";
 }
 
+function getBrowserAccessToken(): string | null {
+  if (isServer) return null;
+  try {
+    return localStorage.getItem("aos_access_token");
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Production auth: send JWT bearer token when configured.
+ * Production auth: send JWT bearer token (runtime localStorage preferred).
  * Dev fallback: `X-User-Id` can still be used when API runs in AUTH_MODE=dev.
  */
 export function getApiHeaders(): Record<string, string> {
@@ -25,8 +34,10 @@ export function getApiHeaders(): Record<string, string> {
     const id = process.env.DEV_USER_ID?.trim() || process.env.API_USER_ID?.trim();
     if (authMode === "dev" && id && !token) headers["X-User-Id"] = id;
   } else {
-    const token =
+    const sessionToken = getBrowserAccessToken();
+    const envToken =
       process.env.NEXT_PUBLIC_API_BEARER_TOKEN?.trim() || process.env.NEXT_PUBLIC_DEV_BEARER_TOKEN?.trim();
+    const token = sessionToken || envToken;
     if (token) headers["Authorization"] = `Bearer ${token}`;
     const id =
       process.env.NEXT_PUBLIC_DEV_USER_ID?.trim() || process.env.NEXT_PUBLIC_API_USER_ID?.trim();
@@ -75,6 +86,16 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+export async function apiPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getApiHeaders() },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw await apiError(res);
+  return (await res.json()) as T;
+}
+
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "PATCH",
@@ -91,7 +112,22 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** Multipart upload: do not set Content-Type (browser sets boundary). Only attaches dev user header. */
+/** Fetch a binary resource (e.g. PDF) with auth headers and return an object URL. Caller should revoke. */
+export async function apiGetBlobUrl(path: string): Promise<string> {
+  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", headers: getApiHeaders() });
+  if (!res.ok) throw await apiError(res);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/** Fetch a binary resource as ArrayBuffer (preferred for pdf.js — blob URLs fail in the worker). */
+export async function apiGetArrayBuffer(path: string): Promise<ArrayBuffer> {
+  const res = await fetch(`${API_BASE}${path}`, { cache: "no-store", headers: getApiHeaders() });
+  if (!res.ok) throw await apiError(res);
+  return res.arrayBuffer();
+}
+
+/** Multipart upload: do not set Content-Type (browser sets boundary). Only attaches auth headers. */
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",

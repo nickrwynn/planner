@@ -75,15 +75,6 @@ def index_resource(
             if value is not None:
                 trace[key] = value
 
-    # Reset chunks
-    db.execute(
-        delete(ResourceChunk).where(
-            ResourceChunk.resource_id == resource.id,
-            ResourceChunk.user_id == resource.user_id,
-        )
-    )
-    db.commit()
-
     if not resource.storage_path:
         resource.parse_status = "failed"
         resource.index_status = "failed"
@@ -143,17 +134,20 @@ def index_resource(
 
         if mime == "application/pdf" or resource.storage_path.lower().endswith(".pdf"):
             pages = extract_pdf_pages(resource.storage_path)
+            # chunk_text() resets indices per call; keep a resource-wide unique index.
+            next_chunk_index = 0
             for page in pages:
                 for ch in chunk_text(text=page.text, page_number=page.page_number):
                     chunks_to_insert.append(
                         ResourceChunk(
                             user_id=resource.user_id,
                             resource_id=resource.id,
-                            chunk_index=ch.chunk_index,
+                            chunk_index=next_chunk_index,
                             page_number=ch.page_number,
                             text=ch.text,
                         )
                     )
+                    next_chunk_index += 1
             resource.parse_status = "parsed"
             resource.ocr_status = "skipped"
             resource.parse_error_code = None
@@ -362,7 +356,19 @@ def index_resource(
                 ),
             )
 
-        db.add_all(chunks_to_insert)
+        # Replace chunks atomically with the new set (avoids unique collisions on retry).
+        db.execute(
+            delete(ResourceChunk).where(
+                ResourceChunk.resource_id == resource.id,
+                ResourceChunk.user_id == resource.user_id,
+            )
+        )
+        db.flush()
+        # Batch inserts: large textbooks can produce hundreds of rows.
+        batch_size = 100
+        for i in range(0, len(chunks_to_insert), batch_size):
+            db.add_all(chunks_to_insert[i : i + batch_size])
+            db.flush()
         if chunks_to_insert:
             transition_resource_lifecycle(
                 resource,
@@ -416,6 +422,14 @@ def index_resource(
         db.add(resource)
         db.commit()
     except Exception as e:  # noqa: BLE001
+        # Failed flush leaves the session unusable until rollback.
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        resource = db.get(Resource, rid)
+        if not resource:
+            return
         # Preserve error in metadata_json without expanding schema
         code = _classify_index_error(e)
         stage = _stage_for_error_code(code)

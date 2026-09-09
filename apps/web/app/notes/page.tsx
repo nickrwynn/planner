@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorState, LoadingState } from "../../components/async-state";
+import { ContentState, EmptyState, ErrorState, LoadingState } from "../../components/async-state";
 import { apiDelete, apiGet, apiPost, apiPatch, toErrorMessage } from "../../lib/api";
 import type { Notebook, NoteDocument, NotePage, Resource } from "../../lib/types";
 import { HandwritingCanvas, type InkElement } from "../../components/HandwritingCanvas";
@@ -207,6 +207,13 @@ export default function NotesPage() {
         </div>
         {!isLoading && !error && notebooks.length === 0 ? (
           <EmptyState message="No notebooks yet. Create one in Notebooks first." />
+        ) : null}
+        {!isLoading && !error && notebooks.length > 0 ? (
+          <ContentState>
+            <div style={{ color: "#555", fontSize: 12 }}>
+              Notebooks available: {notebooks.length}. Select a notebook and document to edit pages.
+            </div>
+          </ContentState>
         ) : null}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

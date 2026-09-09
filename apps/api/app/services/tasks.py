@@ -44,8 +44,13 @@ def get_task_for_user(db: Session, *, user: User, task_id: UUID) -> Task | None:
     )
 
 
-def create_task(db: Session, *, course: Course, data: TaskCreate) -> Task:
-    task = Task(user_id=course.user_id, course_id=course.id, **data.model_dump(exclude={"course_id"}))
+def create_task(db: Session, *, user: User, data: TaskCreate, course: Course | None = None) -> Task:
+    course_id = course.id if course is not None else data.course_id
+    task = Task(
+        user_id=user.id,
+        course_id=course_id,
+        **data.model_dump(exclude={"course_id"}),
+    )
     db.add(task)
     db.commit()
     db.refresh(task)

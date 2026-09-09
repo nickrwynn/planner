@@ -50,3 +50,24 @@ def test_planner_prefers_overdue_task(client):
     data = res.json()
     assert data["task"]["title"] == "Overdue task"
     assert any("overdue" in reason for reason in data["reasons"])
+
+
+def test_planner_labels_crud(client):
+    create = client.post("/planner/labels", json={"name": "  Errands  "})
+    assert create.status_code == 200
+    body = create.json()
+    assert body["name"] == "Errands"
+    label_id = body["id"]
+
+    listed = client.get("/planner/labels")
+    assert listed.status_code == 200
+    assert any(row["id"] == label_id for row in listed.json())
+
+    again = client.post("/planner/labels", json={"name": "Errands"})
+    assert again.status_code == 200
+    assert again.json()["id"] == label_id
+
+    deleted = client.delete(f"/planner/labels/{label_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+    assert all(row["id"] != label_id for row in client.get("/planner/labels").json())

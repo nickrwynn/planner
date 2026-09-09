@@ -14,6 +14,7 @@ test("critical pages render primary landmarks and state containers", async ({ pa
   const routes = [
     "/",
     "/courses",
+    "/calendar",
     "/courses/00000000-0000-0000-0000-000000000000",
     "/resources",
     "/resources/00000000-0000-0000-0000-000000000000",
@@ -28,12 +29,12 @@ test("critical pages render primary landmarks and state containers", async ({ pa
   for (const route of routes) {
     await page.goto(route);
     await expect(page.locator("h1")).toBeVisible();
-    if (route === "/") {
+    if (route === "/" || route === "/calendar") {
       await expect(page.locator(".card").first()).toBeVisible();
       expect(await page.getByTestId("error-state").count()).toBeLessThanOrEqual(1);
       continue;
     }
-    await expect(page.getByTestId("loading-state").or(page.getByTestId("empty-state")).or(page.getByTestId("error-state")).first()).toBeVisible();
+    await expect(page.getByTestId("loading-state").or(page.getByTestId("empty-state")).or(page.getByTestId("error-state")).or(page.getByTestId("content-state")).first()).toBeVisible();
   }
 });
 

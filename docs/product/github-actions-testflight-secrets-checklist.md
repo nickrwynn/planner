@@ -4,15 +4,15 @@ Use this checklist to verify every secret required by `.github/workflows/ios-tes
 
 ## Ownership and run metadata
 
-- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
+- Candidate SHA: `8054bee8f3a931b2dc1e6c9d4b22773d2c5fa358`
 - Repo admin owner: `nickrwynn`
-- Date (UTC): `2026-04-04T05:18:49Z`
+- Date (UTC): `2026-04-09T09:41:25Z`
 
 ## Phase execution status
 
-- [x] PHASE A complete: remote workflow discoverable (`iOS TestFlight`).
+- [x] PHASE A complete: remote workflow discoverable and dispatch revalidated (`iOS TestFlight`, run `23972234629`).
 - [ ] PHASE C blocked: required repository secrets are still absent (`gh secret list` returned empty output).
-- [ ] PHASE C recheck: no new secrets detected as of `2026-04-04T05:18:49Z`.
+- [ ] PHASE C recheck: no new secrets detected as of `2026-04-09T09:10:16Z`.
 
 ## Required repository secrets
 
@@ -59,10 +59,27 @@ file /tmp/profile.mobileprovision
 
 | Check | Result | Evidence reference |
 |---|---|---|
-| Secret presence complete | FAIL | `gh secret list` output empty at 2026-04-04T05:18:49Z |
+| Secret presence complete | FAIL | `gh secret list` output empty at `2026-04-09T09:10:16Z` |
 | Base64 decode checks pass | BLOCKED | Required secret values unavailable for local decode checks |
 | CAP_SERVER_URL reachable | BLOCKED | `CAP_SERVER_URL` secret missing |
-| First signed upload run | BLOCKED | Cannot dispatch `ios-testflight.yml` successfully until secrets are present |
+| First signed upload run | BLOCKED | Latest run `23972405379` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`; all 8 required secret env vars empty) |
+
+## Execution recheck notes (PHASE C)
+
+- `2026-04-04T06:03:11Z`: `gh secret list` returned no configured repository secrets.
+- `2026-04-04T06:03:11Z`: all 8 required TestFlight secrets remain missing at repository scope (`APPLE_TEAM_ID`, `APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`, `APPSTORE_CONNECT_API_KEY_BASE64`, `IOS_CERTIFICATE_P12_BASE64`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `CAP_SERVER_URL`).
+- `2026-04-04T06:03:11Z`: latest run evidence revalidated from `23972405379` failed in `Validate required secrets` before build/sign stages.
+- `2026-04-04T06:03:11Z`: dispatch was intentionally not rerun because no new secrets/artifacts were available to produce different CI evidence.
+- `2026-04-09T09:10:16Z`: `gh secret list` still returned no configured repository secrets.
+- `2026-04-09T09:10:16Z`: latest workflow remains `23972405379` (failure at `Validate required secrets`, `Missing required secret: APPLE_TEAM_ID`).
+- `2026-04-09T09:10:16Z`: no signing artifacts were detected in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads` for `AuthKey_*.p8`, `*.p12`, or `*.mobileprovision`.
+- `2026-04-09T09:10:16Z`: dispatch intentionally not rerun because evidence is unchanged and would repeat the same secret-gate failure.
+- `2026-04-09T09:11:27Z`: local secret-population preflight confirmed owner-only inputs were still unavailable (`APPLE_TEAM_ID`, `APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`, `IOS_CERTIFICATE_PASSWORD`, `CAP_SERVER_URL` all missing in local execution environment), so `gh secret set` could not proceed.
+- `2026-04-09T09:27:29Z`: recheck confirmed no repository secrets configured (`gh secret list` empty), latest run still `23972405379` failed at required-secret gate, and no signing artifacts were present in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads`.
+- `2026-04-09T09:36:36Z`: recheck confirmed blocker unchanged (`gh secret list` still empty, latest run still `23972405379` failed at `Validate required secrets`, and no `.p8`/`.p12`/`.mobileprovision` artifacts detected in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads`).
+- `2026-04-09T09:37:44Z`: blocker recheck unchanged (`gh secret list` empty, latest run unchanged at `23972405379` failure, no signing artifacts detected in monitored paths), so PHASE C remains active and workflow rerun stayed intentionally paused.
+- `2026-04-09T09:40:13Z`: blocker recheck unchanged (`gh secret list` empty, latest run still `23972405379` failed at secret validation, and no owner signing artifacts detected in monitored paths), so PHASE C remains hard-blocked.
+- `2026-04-09T09:41:25Z`: blocker recheck unchanged (`gh secret list` empty, latest run still `23972405379` failed at `Validate required secrets`, no signing artifacts detected in monitored paths), so PHASE C remains hard-blocked.
 
 ## Required closure evidence for PHASE C
 

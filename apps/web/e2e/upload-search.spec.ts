@@ -46,7 +46,14 @@ startxref
       }
     }
   });
-  expect(uploadRes.ok()).toBeTruthy();
+  let uploadErrorBody = "";
+  if (!uploadRes.ok()) {
+    uploadErrorBody = await uploadRes.text();
+  }
+  expect(
+    uploadRes.ok(),
+    `Upload failed with status ${uploadRes.status()} ${uploadRes.statusText()}: ${uploadErrorBody || "<empty body>"}`
+  ).toBeTruthy();
   const resource = await uploadRes.json();
 
   const deadline = Date.now() + 90_000;

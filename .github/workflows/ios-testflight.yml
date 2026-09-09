@@ -95,8 +95,9 @@ jobs:
           cfg_path = Path("apps/web/ios/App/App/capacitor.config.json")
           cfg = json.loads(cfg_path.read_text())
           classes = cfg.get("packageClassList") or []
-          if "CanvasLoginPlugin" not in classes:
-              classes.append("CanvasLoginPlugin")
+          for name in ("CanvasLoginPlugin", "BrowserPlugin"):
+              if name not in classes:
+                  classes.append(name)
           cfg["packageClassList"] = classes
           cfg_path.write_text(json.dumps(cfg, indent="\t") + "\n")
           print("storyboard + packageClassList OK")

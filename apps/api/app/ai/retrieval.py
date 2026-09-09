@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.indexing.embeddings import get_embeddings_provider
@@ -22,6 +22,12 @@ class RetrievedChunk:
     text: str
 
 
+@dataclass(frozen=True)
+class PageRange:
+    start: int
+    end: int
+
+
 def retrieve_chunks(
     db: Session,
     *,
@@ -30,6 +36,9 @@ def retrieve_chunks(
     course_id: UUID | None = None,
     resource_ids: list[UUID] | None = None,
     k: int = 8,
+    page_start: int | None = None,
+    page_end: int | None = None,
+    page_ranges: list[PageRange] | None = None,
 ) -> list[RetrievedChunk]:
     owned_resource_ids = select(Resource.id).where(
         Resource.user_id == user_id,
@@ -72,6 +81,69 @@ def retrieve_chunks(
             )
         )
 
+    ranges = list(page_ranges or [])
+    if page_start is not None or page_end is not None:
+        start = int(page_start or 1)
+        end = int(page_end or page_start or start)
+        if end < start:
+            start, end = end, start
+        ranges.append(PageRange(start=start, end=end))
+
+    if ranges:
+        clauses = []
+        for r in ranges:
+            clauses.append(
+                and_(
+                    ResourceChunk.page_number.is_not(None),
+                    ResourceChunk.page_number >= r.start,
+                    ResourceChunk.page_number <= r.end,
+                )
+            )
+        stmt = stmt.where(or_(*clauses))
+        # For explicit page scopes (Study Lab sections), load body chunks directly
+        # instead of keyword-hybrid which often returns empty/front-matter.
+        page_rows = list(
+            db.execute(
+                stmt.order_by(ResourceChunk.chunk_index.asc(), ResourceChunk.id.asc()).limit(max(k * 4, 40))
+            )
+            .scalars()
+            .all()
+        )
+        if page_rows:
+            # Prefer hybrid ranking within the page pool when embeddings exist; else take in order.
+            embedder = get_embeddings_provider()
+            if embedder and query.strip():
+                ranked = select_chunks_hybrid(
+                    db,
+                    stmt,
+                    query,
+                    embedder,
+                    k,
+                    candidate_limit=min(300, max(len(page_rows) * 2, 50)),
+                )
+                if ranked:
+                    return [
+                        RetrievedChunk(
+                            chunk_id=ch.id,
+                            resource_id=ch.resource_id,
+                            chunk_index=ch.chunk_index,
+                            page_number=ch.page_number,
+                            text=ch.text,
+                        )
+                        for ch, _score in ranked
+                    ]
+            return [
+                RetrievedChunk(
+                    chunk_id=ch.id,
+                    resource_id=ch.resource_id,
+                    chunk_index=ch.chunk_index,
+                    page_number=ch.page_number,
+                    text=ch.text,
+                )
+                for ch in page_rows[:k]
+            ]
+        return []
+
     embedder = get_embeddings_provider()
     ranked = select_chunks_hybrid(db, stmt, query, embedder, k, candidate_limit=300)
 
@@ -85,4 +157,3 @@ def retrieve_chunks(
         )
         for ch, _score in ranked
     ]
-

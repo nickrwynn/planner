@@ -46,10 +46,12 @@ def list_tasks_for_course(
 
 @router.post("/tasks", response_model=TaskRead)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
-    course: Course | None = course_service.get_course(db, user=user, course_id=payload.course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-    return task_service.create_task(db, course=course, data=payload)
+    course: Course | None = None
+    if payload.course_id is not None:
+        course = course_service.get_course(db, user=user, course_id=payload.course_id)
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+    return task_service.create_task(db, user=user, course=course, data=payload)
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskRead)

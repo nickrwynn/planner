@@ -12,6 +12,10 @@ class GenerateBaseRequest(BaseModel):
     course_id: UUID | None = None
     resource_ids: list[UUID] = Field(default_factory=list, min_length=1)
     title: str | None = None
+    # Scope generation to a textbook region (from GET /resources/{id}/sections).
+    section_keys: list[str] = Field(default_factory=list, max_length=40)
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
 
 
 class SummarySection(BaseModel):
@@ -102,6 +106,9 @@ class ArtifactRegenerateRequest(BaseModel):
     course_id: UUID | None = None
     resource_ids: list[UUID] | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    section_keys: list[str] = Field(default_factory=list, max_length=40)
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
 
 
 # --- LLM output validation (no citation fields; stored in metadata_json) ---
@@ -124,7 +131,7 @@ class LlmFlashcardItem(BaseModel):
 
 class LlmFlashcardsContent(BaseModel):
     title: str | None = None
-    cards: list[LlmFlashcardItem] = Field(min_length=1)
+    cards: list[LlmFlashcardItem] = Field(min_length=5)
 
 
 class LlmQuizItem(BaseModel):
@@ -135,7 +142,7 @@ class LlmQuizItem(BaseModel):
 
 class LlmQuizContent(BaseModel):
     title: str | None = None
-    items: list[LlmQuizItem] = Field(min_length=1)
+    items: list[LlmQuizItem] = Field(min_length=4)
 
 
 class LlmProblemItem(BaseModel):
@@ -145,5 +152,5 @@ class LlmProblemItem(BaseModel):
 
 class LlmSampleProblemsContent(BaseModel):
     title: str | None = None
-    problems: list[LlmProblemItem] = Field(min_length=1)
+    problems: list[LlmProblemItem] = Field(min_length=2)
 

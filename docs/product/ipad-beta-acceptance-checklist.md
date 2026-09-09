@@ -4,14 +4,14 @@ Use this checklist before promoting builds beyond internal TestFlight testers.
 
 ## Run metadata (required evidence header)
 
-- Candidate SHA: `41e0a62d103169f2bd8d7ad0df3c15f2f96d3f55`
-- GitHub Actions run URL (`ios-testflight.yml`): `https://github.com/nickrwynn/planner/actions/runs/23972118129` (failed at required secrets gate)
+- Candidate SHA: `8054bee8f3a931b2dc1e6c9d4b22773d2c5fa358`
+- GitHub Actions run URL (`ios-testflight.yml`): `https://github.com/nickrwynn/planner/actions/runs/23972405379` (failed at required secrets gate)
 - TestFlight build number: `BLOCKED - no successful upload run yet`
 - App Store Connect app version/build: `BLOCKED - no successful upload run yet`
 - Tester name(s): `BLOCKED - pending internal TestFlight distribution`
 - iPad model(s): `BLOCKED - pending internal TestFlight distribution`
 - iPadOS version(s): `BLOCKED - pending internal TestFlight distribution`
-- Test date (UTC): `2026-04-04T05:19:29Z`
+- Test date (UTC): `2026-04-09T09:41:25Z`
 
 ## iPad web readiness
 
@@ -61,4 +61,16 @@ Current blocker evidence:
 - `gh workflow run ios-testflight.yml --ref main` dispatch now succeeds.
 - Run `https://github.com/nickrwynn/planner/actions/runs/23972013710` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`).
 - Run `https://github.com/nickrwynn/planner/actions/runs/23972118129` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`).
-- `gh secret list` returned no configured repository secrets for iOS TestFlight.
+- Run `https://github.com/nickrwynn/planner/actions/runs/23972234629` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`).
+- Run `https://github.com/nickrwynn/planner/actions/runs/23972405379` failed at `Validate required secrets` (`Missing required secret: APPLE_TEAM_ID`; all 8 required secret env vars were empty).
+- `2026-04-04T06:03:11Z`: `gh secret list` recheck returned no configured repository secrets for iOS TestFlight.
+- `2026-04-04T06:03:11Z`: no owner-provided signing artifacts or secrets became available, so no new dispatch was triggered (would not produce new evidence).
+- `2026-04-09T09:10:16Z`: fresh `gh secret list` recheck still returned no configured repository secrets for iOS TestFlight.
+- `2026-04-09T09:10:16Z`: latest run remained `23972405379` (failed at `Validate required secrets` with `Missing required secret: APPLE_TEAM_ID`).
+- `2026-04-09T09:10:16Z`: no owner-provided signing artifacts were detected in `/home/hpc1/Documents/planner`, `/home/hpc1/Documents`, or `/home/hpc1/Downloads`, so dispatch remained intentionally paused.
+- `2026-04-09T09:11:27Z`: local PHASE C preflight confirmed required owner inputs remained unavailable (`APPLE_TEAM_ID`, `APPSTORE_CONNECT_KEY_ID`, `APPSTORE_CONNECT_ISSUER_ID`, `IOS_CERTIFICATE_PASSWORD`, `CAP_SERVER_URL` all missing), so signed upload remains blocked upstream of workflow dispatch.
+- `2026-04-09T09:27:29Z`: recheck confirmed blocker state unchanged (no configured iOS/TestFlight secrets, no signing artifacts detected, latest failed run still `23972405379`), so PHASE D/E remain gated by PHASE C.
+- `2026-04-09T09:36:36Z`: blocker state revalidated unchanged (`gh secret list` empty, latest failed run still `23972405379`, no signing artifacts detected), so PHASE C remains the only active gate before D/E.
+- `2026-04-09T09:37:44Z`: blocker state remained unchanged (`gh secret list` empty, no newer run than failed `23972405379`, and no signing artifacts detected), so PHASE D/E remain gated by PHASE C.
+- `2026-04-09T09:40:13Z`: blocker state remained unchanged (`gh secret list` empty, latest run still failed `23972405379`, and no signing artifacts detected), so PHASE D/E remain gated by PHASE C.
+- `2026-04-09T09:41:25Z`: blocker state remained unchanged (`gh secret list` empty, latest run still failed `23972405379`, and no signing artifacts detected), so PHASE D/E remain gated by PHASE C.

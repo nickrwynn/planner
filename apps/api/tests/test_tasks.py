@@ -34,3 +34,20 @@ def test_tasks_crud(client):
     assert res.status_code == 200
     assert res.json()["ok"] is True
 
+
+def test_personal_task_without_course(client):
+    res = client.post(
+        "/tasks",
+        json={
+            "title": "Personal red todo",
+            "task_type": "other",
+            "due_at": "2026-09-08T17:00:00Z",
+            "logistics_json": {"kind": "todo", "difficulty": "red"},
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["course_id"] is None
+    assert body["title"] == "Personal red todo"
+    assert body["logistics_json"]["difficulty"] == "red"
+

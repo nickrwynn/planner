@@ -52,3 +52,7 @@ export function EmptyState({ message, action }: { message: string; action?: Reac
     </div>
   );
 }
+
+export function ContentState({ children }: { children: ReactNode }) {
+  return <div data-testid="content-state">{children}</div>;
+}

@@ -11,14 +11,20 @@ from app.models.resource_lifecycle_event import ResourceLifecycleEvent
 ALLOWED_LIFECYCLE_TRANSITIONS: dict[str, set[str]] = {
     "uploaded": {"queued", "parsing", "skipped", "failed"},
     "queued": {"uploaded", "parsing", "skipped", "failed"},
-    "parsing": {"parsed", "skipped", "failed"},
-    "parsed": {"chunked", "skipped", "failed"},
-    "chunked": {"indexed", "skipped", "failed"},
-    "indexed": {"searchable", "failed"},
+    # Mid-pipeline states may jump back to uploaded/queued for reindex recovery.
+    "parsing": {"parsed", "skipped", "failed", "uploaded", "queued"},
+    "parsed": {"chunked", "skipped", "failed", "uploaded", "queued"},
+    "chunked": {"indexed", "skipped", "failed", "uploaded", "queued"},
+    "indexed": {"searchable", "failed", "uploaded", "queued"},
     "searchable": {"uploaded", "queued", "parsing", "failed"},
     "skipped": {"uploaded", "queued", "parsing", "failed"},
     "failed": {"uploaded", "queued", "parsing", "failed"},
 }
+
+
+def _lock_resource(db: Session, *, resource_id) -> None:
+    """Serialize lifecycle event writes for one resource across concurrent sessions."""
+    db.execute(select(Resource.id).where(Resource.id == resource_id).with_for_update()).scalar_one_or_none()
 
 
 def _next_seq(db: Session, *, resource_id) -> int:
@@ -48,6 +54,7 @@ def record_resource_event(
     occurred_at: datetime | None = None,
 ) -> ResourceLifecycleEvent:
     ts = occurred_at or datetime.now(UTC)
+    _lock_resource(db, resource_id=resource.id)
     event = ResourceLifecycleEvent(
         user_id=resource.user_id,
         resource_id=resource.id,

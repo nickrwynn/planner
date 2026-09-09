@@ -318,6 +318,10 @@ def main() -> None:
                 except Exception as e:  # noqa: BLE001
                     heartbeat_stop.set()
                     heartbeat_thread.join(timeout=2)
+                    try:
+                        db.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
                     payload = {"job_id": str(job.id), "resource_id": str(job.resource_id)}
                     action, updated, stale_reason = job_service.fail_or_retry_parse_job_detailed(
                         db,

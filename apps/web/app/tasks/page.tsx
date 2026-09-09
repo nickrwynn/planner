@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { EmptyState, ErrorState, LoadingState } from "../../components/async-state";
+import { ContentState, EmptyState, ErrorState, LoadingState } from "../../components/async-state";
 import { apiDelete, apiGet, apiPatch, apiPost, toErrorMessage } from "../../lib/api";
 import type { Course, Task } from "../../lib/types";
 
@@ -132,30 +132,34 @@ export default function TasksPage() {
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Tasks</div>
         <div style={{ display: "grid", gap: 8 }}>
           {isLoading ? <LoadingState label="Loading tasks..." /> : null}
-          {tasks.map((t) => (
-            <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{t.title}</div>
-                <div style={{ color: "#555", fontSize: 13 }}>
-                  {(t.task_type || "task").toUpperCase()} • {t.status}
+          {!isLoading && !error && tasks.length > 0 ? (
+            <ContentState>
+              {tasks.map((t) => (
+                <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{t.title}</div>
+                    <div style={{ color: "#555", fontSize: 13 }}>
+                      {(t.task_type || "task").toUpperCase()} • {t.status}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {t.status !== "done" && (
+                      <button onClick={() => markDone(t.id)} style={{ padding: "6px 10px" }}>
+                        Mark done
+                      </button>
+                    )}
+                    <button onClick={() => renameTask(t)} style={{ padding: "6px 10px" }}>
+                      Rename
+                    </button>
+                    <button onClick={() => deleteTask(t.id)} style={{ padding: "6px 10px" }}>
+                      Delete
+                    </button>
+                    <div style={{ color: "#555", fontSize: 12 }}>{t.id}</div>
+                  </div>
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                {t.status !== "done" && (
-                  <button onClick={() => markDone(t.id)} style={{ padding: "6px 10px" }}>
-                    Mark done
-                  </button>
-                )}
-                <button onClick={() => renameTask(t)} style={{ padding: "6px 10px" }}>
-                  Rename
-                </button>
-                <button onClick={() => deleteTask(t.id)} style={{ padding: "6px 10px" }}>
-                  Delete
-                </button>
-                <div style={{ color: "#555", fontSize: 12 }}>{t.id}</div>
-              </div>
-            </div>
-          ))}
+              ))}
+            </ContentState>
+          ) : null}
           {!isLoading && !error && tasks.length === 0 ? <EmptyState message="No tasks for this course yet." /> : null}
         </div>
       </div>

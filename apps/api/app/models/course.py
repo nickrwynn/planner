@@ -19,6 +19,8 @@ class Course(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     term: Mapped[str | None] = mapped_column(String(50), nullable=True)
     color: Mapped[str | None] = mapped_column(String(20), nullable=True)
     grading_schema_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     user = relationship("User", back_populates="courses")
     tasks = relationship("Task", back_populates="course", cascade="all,delete-orphan")

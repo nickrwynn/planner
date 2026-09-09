@@ -1,0 +1,15 @@
+.git
+.venv
+.venv-ci
+.venv-test
+**/__pycache__
+**/.pytest_cache
+**/node_modules
+**/.next
+**/out
+**/dist
+apps/web/ios
+apps/web/capacitor.config.ts
+data/uploads
+*.log
+.DS_Store

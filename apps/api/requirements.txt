@@ -22,6 +22,8 @@ pytesseract==0.3.10
 
 # Embeddings (optional; default MVP is keyword-only search/retrieval)
 openai==1.40.3
+# StudyFlows Ask + handwriting (Cursor Auto / agent)
+cursor-sdk==1.0.31
 # Observability (optional, enabled by TELEMETRY_ENABLED=true)
 opentelemetry-api==1.27.0
 opentelemetry-sdk==1.27.0

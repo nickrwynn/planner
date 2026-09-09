@@ -34,13 +34,30 @@ services:
       EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_EMBEDDINGS_MODEL: ${OPENAI_EMBEDDINGS_MODEL:-}
-      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-}
+      CURSOR_API_KEY: ${CURSOR_API_KEY:-}
+      CURSOR_MODEL: ${CURSOR_MODEL:-auto}
+      CURSOR_OPTIMIZE_FOR: ${CURSOR_OPTIMIZE_FOR:-balanced}
+      CURSOR_AGENT_CWD: ${CURSOR_AGENT_CWD:-/tmp/planner-cursor-agent}
       SENTENCE_TRANSFORMERS_MODEL: ${SENTENCE_TRANSFORMERS_MODEL:-}
       AUTH_MODE: ${AUTH_MODE:-bearer}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-me}
       AUTH_JWT_ALGORITHM: ${AUTH_JWT_ALGORITHM:-HS256}
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-}
       AUTH_JWT_AUDIENCE: ${AUTH_JWT_AUDIENCE:-}
+      INTEGRATIONS_SECRET: ${INTEGRATIONS_SECRET:-}
+      CANVAS_OAUTH_CLIENT_ID: ${CANVAS_OAUTH_CLIENT_ID:-}
+      CANVAS_OAUTH_CLIENT_SECRET: ${CANVAS_OAUTH_CLIENT_SECRET:-}
+      CANVAS_OAUTH_REDIRECT_URI: ${CANVAS_OAUTH_REDIRECT_URI:-http://localhost:8000/integrations/canvas/oauth/callback}
+      CANVAS_OAUTH_SUCCESS_URL: ${CANVAS_OAUTH_SUCCESS_URL:-http://localhost:3000/courses?canvas=connected}
+      CANVAS_OAUTH_FAILURE_URL: ${CANVAS_OAUTH_FAILURE_URL:-http://localhost:3000/courses?canvas=error}
+      CANVAS_DEFAULT_BASE_URL: ${CANVAS_DEFAULT_BASE_URL:-https://canvas.tamu.edu}
+      CANVAS_OAUTH_SCOPES: ${CANVAS_OAUTH_SCOPES:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8000/integrations/google/oauth/callback}
+      GOOGLE_OAUTH_SUCCESS_URL: ${GOOGLE_OAUTH_SUCCESS_URL:-http://localhost:3000/courses?google=connected}
+      GOOGLE_OAUTH_FAILURE_URL: ${GOOGLE_OAUTH_FAILURE_URL:-http://localhost:3000/courses?google=error}
+      GOOGLE_OAUTH_SCOPES: ${GOOGLE_OAUTH_SCOPES:-https://www.googleapis.com/auth/drive.readonly}
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-120}
@@ -97,6 +114,8 @@ services:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
       API_INTERNAL_BASE_URL: ${API_INTERNAL_BASE_URL}
+      API_AUTH_MODE: ${API_AUTH_MODE:-bearer}
+      NEXT_PUBLIC_API_AUTH_MODE: ${NEXT_PUBLIC_API_AUTH_MODE:-bearer}
       NEXT_PUBLIC_DEV_USER_ID: ${NEXT_PUBLIC_DEV_USER_ID:-}
       NEXT_PUBLIC_API_USER_ID: ${NEXT_PUBLIC_API_USER_ID:-}
       DEV_USER_ID: ${DEV_USER_ID:-}
@@ -112,7 +131,11 @@ services:
         fi
         exec pnpm exec next dev -H 0.0.0.0 -p 3000
     volumes:
+      # Bind source for live reload, but keep image-installed deps/.next so host
+      # node_modules (different pnpm peer hashes) cannot break next inside the container.
       - ./apps/web:/app/apps/web
+      - /app/apps/web/node_modules
+      - /app/apps/web/.next
     depends_on:
       - api
     ports:

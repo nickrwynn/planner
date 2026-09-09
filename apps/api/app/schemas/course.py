@@ -12,6 +12,8 @@ class CourseCreate(BaseModel):
     term: str | None = Field(default=None, max_length=50)
     color: str | None = Field(default=None, max_length=20)
     grading_schema_json: dict | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
 
 
 class CourseUpdate(BaseModel):
@@ -20,6 +22,8 @@ class CourseUpdate(BaseModel):
     term: str | None = Field(default=None, max_length=50)
     color: str | None = Field(default=None, max_length=20)
     grading_schema_json: dict | None = None
+    source_type: str | None = None
+    source_ref: str | None = None
 
 
 class CourseRead(BaseModel):
@@ -30,6 +34,8 @@ class CourseRead(BaseModel):
     term: str | None
     color: str | None
     grading_schema_json: dict | None
+    source_type: str | None = None
+    source_ref: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -41,4 +47,3 @@ class CourseGradeSummary(BaseModel):
     weighted_completion_pct: float
     done_tasks: int
     total_tasks: int
-

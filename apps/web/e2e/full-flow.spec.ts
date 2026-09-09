@@ -26,7 +26,14 @@ test("full flow: upload -> index -> search -> ai -> notes -> planner", async ({ 
       }
     }
   });
-  expect(uploadRes.ok()).toBeTruthy();
+  let uploadErrorBody = "";
+  if (!uploadRes.ok()) {
+    uploadErrorBody = await uploadRes.text();
+  }
+  expect(
+    uploadRes.ok(),
+    `Upload failed with status ${uploadRes.status()} ${uploadRes.statusText()}: ${uploadErrorBody || "<empty body>"}`
+  ).toBeTruthy();
   const resource = await uploadRes.json();
 
   const deadline = Date.now() + 90_000;
@@ -89,12 +96,25 @@ test("full flow: upload -> index -> search -> ai -> notes -> planner", async ({ 
 });
 
 test("courses page shows error + retry behavior", async ({ page }) => {
+  let failCreate = true;
+  await page.route(`${API}/courses`, async (route) => {
+    if (route.request().method() === "POST" && failCreate) {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "create failed" }),
+      });
+      return;
+    }
+    await route.continue();
+  });
   await page.goto("/courses");
-  await page.getByPlaceholder("Course name").fill("Bad schema course");
-  await page.locator("textarea").first().fill("{");
-  await page.getByRole("button", { name: "Create" }).first().click();
+  await page.getByRole("button", { name: "Add course" }).click();
+  await page.getByPlaceholder("Course name").fill("Retry Course");
+  await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByTestId("error-state")).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  failCreate = false;
   await page.getByRole("button", { name: "Retry" }).click();
   await expect(page.getByRole("heading", { name: "Courses" })).toBeVisible();
   await expect(page.getByTestId("error-state")).toHaveCount(0);
@@ -117,6 +137,13 @@ test("dashboard shows standardized error + retry and no empty-state confusion", 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ status: "ok", postgres: { ok: true }, redis: { ok: true } }),
+    });
+  });
+  await page.route(`${API}/courses`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([]),
     });
   });
   await page.route(`${API}/tasks?limit=100&offset=0`, async (route) => {
@@ -158,7 +185,7 @@ test("dashboard shows standardized error + retry and no empty-state confusion", 
   failHealth = false;
   await page.getByTestId("retry-button").click();
   await expect(page.getByTestId("error-state")).toHaveCount(0);
-  await expect(page.getByText("Stack health")).toBeVisible();
+  await expect(page.getByText("System")).toBeVisible();
 });
 
 test("tasks page shows loading before terminal state", async ({ page }) => {
@@ -180,6 +207,7 @@ test("critical pages expose consistent state containers", async ({ page }) => {
   const routes = [
     { path: "/", heading: "Dashboard" },
     { path: "/courses", heading: "Courses" },
+    { path: "/calendar", heading: "Calendar" },
     { path: "/resources", heading: "Resources" },
     { path: "/notebooks", heading: "Notebooks" },
     { path: "/notes", heading: "Notes" },
@@ -191,12 +219,19 @@ test("critical pages expose consistent state containers", async ({ page }) => {
   for (const route of routes) {
     await page.goto(route.path);
     await expect(page.getByRole("heading", { name: route.heading })).toBeVisible();
-    if (route.path === "/") {
+    if (route.path === "/" || route.path === "/calendar") {
       await expect(page.locator(".card").first()).toBeVisible();
       expect(await page.getByTestId("error-state").count()).toBeLessThanOrEqual(1);
       continue;
     }
-    await expect(page.getByTestId("loading-state").or(page.getByTestId("empty-state")).or(page.getByTestId("error-state")).first()).toBeVisible();
+    await expect(
+      page
+        .getByTestId("loading-state")
+        .or(page.getByTestId("empty-state"))
+        .or(page.getByTestId("error-state"))
+        .or(page.getByTestId("content-state"))
+        .first()
+    ).toBeVisible();
   }
 });
 

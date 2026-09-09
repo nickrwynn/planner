@@ -22,16 +22,35 @@ class Settings(BaseSettings):
     s3_endpoint_url: str | None = None
     auth_mode: str = "bearer"
     auth_jwt_secret: str = ""
+    integrations_secret: str = ""
     auth_jwt_algorithm: str = "HS256"
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str | None = None
     auth_jwt_leeway_seconds: int = 30
+    auth_jwt_ttl_hours: int = 720
     telemetry_enabled: bool = False
     telemetry_service_name: str = "academic-os-api"
     rate_limit_enabled: bool = True
     rate_limit_window_seconds: int = 60
     rate_limit_max_requests: int = 120
 
+    # Canvas OAuth (developer key). Required for Connect with OAuth.
+    canvas_oauth_client_id: str = ""
+    canvas_oauth_client_secret: str = ""
+    canvas_oauth_redirect_uri: str = "http://localhost:8000/integrations/canvas/oauth/callback"
+    canvas_oauth_success_url: str = "http://localhost:3000/courses?canvas=connected"
+    canvas_oauth_failure_url: str = "http://localhost:3000/courses?canvas=error"
+    canvas_default_base_url: str = "https://canvas.tamu.edu"
+    # Optional space-separated Canvas OAuth scopes. Leave empty for unscoped developer keys.
+    canvas_oauth_scopes: str = ""
+
+    # Google Drive OAuth (Google Cloud OAuth client).
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8000/integrations/google/oauth/callback"
+    google_oauth_success_url: str = "http://localhost:3000/courses?google=connected"
+    google_oauth_failure_url: str = "http://localhost:3000/courses?google=error"
+    google_oauth_scopes: str = "https://www.googleapis.com/auth/drive.readonly"
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _parse_cors_origins(cls, v):

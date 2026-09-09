@@ -5,8 +5,8 @@ Scope: production release closeout
 
 ## Candidate Binding
 
-- Candidate SHA: `BLOCKED`
-- Candidate branch/tag: `BLOCKED`
+- Candidate SHA: `13caf46a39c53d1ba0725ed77f8a4c4eec838e9b`
+- Candidate branch/tag: `main`
 - Environment: `production`
 
 Validation rule: this candidate identifier must exactly match
@@ -26,6 +26,9 @@ Validation rule: this candidate identifier must exactly match
 - Web image tag: `BLOCKED`
 - Worker image tag: `BLOCKED`
 
+Evidence rule: image tags must be immutable tags mapped to candidate
+`13caf46a39c53d1ba0725ed77f8a4c4eec838e9b`; `latest` is not acceptable.
+
 ## Rollback Command Contract
 
 - App rollback command:
@@ -37,15 +40,18 @@ Validation rule: this candidate identifier must exactly match
 
 ## Release Checklist
 
-- [ ] Candidate SHA is immutable and recorded.
-- [ ] CI evidence URL for this candidate is attached.
+- [x] Candidate SHA is immutable and recorded.
+- [x] CI evidence URL for this candidate is attached.
 - [ ] Required CI jobs are green for this candidate.
 - [ ] Image tags map exactly to this candidate.
 - [ ] Rollback plan reviewed by release owner and on-call approver.
 - [ ] Restore-drill evidence (<=30 days) is linked.
 - [ ] Health and upload/index/search smoke evidence attached.
 
+Attached CI evidence URL: `https://github.com/nickrwynn/planner/actions/runs/23961441564`
+Required release-critical CI status for this candidate: `BLOCKED` (`api_tests`, `e2e` failed).
+
 ## Status
 
 Current state: `BLOCKED`
-Blocker reason: candidate-bound operational fields are not yet populated.
+Blocker reason: ticket metadata, immutable image tags, approvals, and restore-drill linkage are not populated.

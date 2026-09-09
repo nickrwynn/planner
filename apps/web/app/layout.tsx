@@ -1,10 +1,24 @@
 import "./globals.css";
-import Link from "next/link";
-import { AgentPane } from "../components/AgentPane";
+import { AppShell } from "../components/app-shell";
+import { ThemeBoot } from "../components/theme-boot";
+import type { Metadata, Viewport } from "next";
 
-export const metadata = {
-  title: "Academic OS (Bootstrap)",
-  description: "Sprint 1 bootstrap stack"
+export const metadata: Metadata = {
+  title: "StudyFlows",
+  description: "StudyFlows — courses, resources, and study tools",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "StudyFlows"
+  }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#111827"
 };
 
 export default function RootLayout({
@@ -13,45 +27,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <div className="appShell">
-          <aside className="sidebar">
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Academic OS</div>
-            <nav style={{ display: "grid", gap: 4 }}>
-              <Link className="navLink" href="/">
-                Dashboard
-              </Link>
-              <Link className="navLink" href="/courses">
-                Courses
-              </Link>
-              <Link className="navLink" href="/tasks">
-                Tasks
-              </Link>
-              <Link className="navLink" href="/resources">
-                Resources
-              </Link>
-              <Link className="navLink" href="/search">
-                Search
-              </Link>
-              <Link className="navLink" href="/study-lab">
-                Study Lab
-              </Link>
-              <Link className="navLink" href="/notebooks">
-                Notebooks
-              </Link>
-              <Link className="navLink" href="/notes">
-                Notes
-              </Link>
-            </nav>
-          </aside>
-          <div className="mainPane">{children}</div>
-          <aside className="agentPane">
-            <AgentPane />
-          </aside>
-        </div>
+        <ThemeBoot />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
 }
-

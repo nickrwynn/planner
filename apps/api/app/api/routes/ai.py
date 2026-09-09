@@ -11,13 +11,23 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.llm import chat_completion, is_llm_configured
+from app.ai.llm import chat_completion, is_llm_configured, recognize_handwriting
 from app.ai.retrieval import retrieve_chunks
+from app.ai.json_utils import parse_llm_json_object
 from app.api.deps import get_current_user, get_db_from_request
 from app.models.ai_conversation import AIConversation
 from app.models.ai_message import AIMessage
 from app.models.ai_usage_log import AIUsageLog
-from app.schemas.ai import AskRequest, AskResponse, Citation, ConversationRead, MessageRead
+from app.schemas.ai import (
+    AiStatusResponse,
+    AskRequest,
+    AskResponse,
+    Citation,
+    ConversationRead,
+    HandwritingRequest,
+    HandwritingResponse,
+    MessageRead,
+)
 from app.schemas.study import (
     ArtifactRegenerateRequest,
     ArtifactListItem,
@@ -181,31 +191,64 @@ def ask(payload: AskRequest, db: Session = Depends(get_db_from_request), user=De
         context_lines.append(
             f"[S{i}] resource={c.resource_id} page={c.page_number or '-'} chunk={c.chunk_index}\n{c.text}"
         )
-    context = "\n\n".join(context_lines) if context_lines else "(no sources found)"
+    context = "\n\n".join(context_lines) if context_lines else "(no course sources retrieved)"
+
+    from app.ai.web_lookup import fetch_wikipedia_summary, looks_like_definition_query
+
+    web_note = None
+    if payload.allow_web_lookup and (not chunks or looks_like_definition_query(payload.message)):
+        web_note = fetch_wikipedia_summary(payload.message)
 
     system = (
-        "You are an academic assistant. Use the provided sources when possible. "
-        "If you use a source, cite it as [S#]. If no sources, say so explicitly."
+        "You are an academic assistant for students. "
+        "When course sources are provided, prefer them and cite as [S#]. "
+        "For definitions and background concepts (e.g. sample space, derivative, mitosis), "
+        "always give a clear explanation even if those words are not in the sources. "
+        "Then connect the explanation to the course materials when possible. "
+        "If web notes are present, you may use them for background and say so briefly."
     )
 
-    user_prompt = f"Question:\n{payload.message}\n\nSources:\n{context}\n\nAnswer with citations like [S1], [S2]."
+    web_block = f"\n\nWeb notes:\n{web_note}" if web_note else ""
+    user_prompt = (
+        f"Question:\n{payload.message}\n\nCourse sources:\n{context}{web_block}\n\n"
+        "Answer helpfully. Cite course sources as [S1], [S2] when you use them."
+    )
 
-    if is_llm_configured() and chunks:
-        model_name = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
-        answer = chat_completion(system=system, user=user_prompt).content
-        provider = "openai"
+    grounding = "strict"
+    if payload.allow_general_knowledge:
+        grounding = "hybrid" if chunks else "general"
+
+    if is_llm_configured() and (chunks or payload.allow_general_knowledge):
+        try:
+            llm = chat_completion(system=system, user=user_prompt, grounding=grounding)
+            answer = llm.content
+            provider = getattr(llm, "provider", None) or "cursor"
+            model_name = getattr(llm, "model_name", None) or os.getenv("CURSOR_MODEL", "auto")
+        except Exception as exc:
+            provider = "fallback"
+            model_name = None
+            if chunks:
+                answer = (
+                    f"Cursor agent failed ({exc}). Here are the most relevant source snippets:\n\n"
+                    + "\n\n".join([f"[S{i}] {c.text[:400]}" for i, c in enumerate(chunks, start=1)])
+                ).strip()
+            else:
+                answer = (
+                    f"Cursor agent failed ({exc}). "
+                    "I couldn't generate an answer right now — try again in a moment."
+                )
     else:
         # Deterministic fallback for local dev without API keys
         provider = "fallback"
         model_name = None
         if not chunks:
             answer = (
-                "No indexed sources were retrieved for your query. "
-                "Upload or reindex relevant resources and try again."
+                "No indexed sources were retrieved and the LLM is not configured "
+                "(set CURSOR_API_KEY). Upload/reindex resources or configure AI to answer concept questions."
             )
         else:
             answer = (
-                "LLM is not configured (set OPENAI_API_KEY). Here are the most relevant source snippets:\n\n"
+                "LLM is not configured (set CURSOR_API_KEY). Here are the most relevant source snippets:\n\n"
                 + "\n\n".join([f"[S{i}] {c.text[:400]}" for i, c in enumerate(chunks, start=1)])
             ).strip()
 
@@ -248,6 +291,82 @@ def ask(payload: AskRequest, db: Session = Depends(get_db_from_request), user=De
     )
 
     return AskResponse(conversation_id=convo.id, answer=answer, citations=citations)
+
+
+@router.get("/status", response_model=AiStatusResponse)
+def ai_status(user=Depends(get_current_user)):
+    _ = user
+    configured = is_llm_configured()
+    model = os.getenv("CURSOR_MODEL", "auto") if configured else None
+    if configured:
+        return AiStatusResponse(
+            configured=True,
+            provider="cursor",
+            model=model,
+            message=f"Cursor agent ready (model={model}).",
+        )
+    return AiStatusResponse(
+        configured=False,
+        provider=None,
+        model=None,
+        message="Set CURSOR_API_KEY for Ask, Study Lab, and handwriting recognition (Cursor Auto).",
+    )
+
+
+@router.post("/handwriting", response_model=HandwritingResponse)
+def handwriting(payload: HandwritingRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
+    if not is_llm_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="CURSOR_API_KEY is not set. Configure Cursor Auto for handwriting recognition.",
+        )
+    start = time.perf_counter()
+    try:
+        llm = recognize_handwriting(image_png_base64=payload.image_base64, mode=payload.mode)
+        try:
+            obj = parse_llm_json_object(llm.content)
+            text = str(obj.get("text") or "").strip()
+            latex_raw = obj.get("latex")
+            latex = str(latex_raw).strip() if latex_raw not in (None, "", "null") else None
+        except Exception:
+            text = llm.content.strip()
+            latex = None
+        if not text and latex:
+            text = latex
+        if not text:
+            raise RuntimeError("No text recognized from handwriting")
+        _record_ai_usage(
+            db,
+            user_id=user.id,
+            endpoint="/ai/handwriting",
+            status="ok",
+            provider=llm.provider,
+            model_name=llm.model_name,
+            metadata_json={
+                "mode": payload.mode,
+                "latency_ms": round((time.perf_counter() - start) * 1000, 2),
+            },
+        )
+        return HandwritingResponse(
+            text=text,
+            latex=latex,
+            provider=llm.provider,
+            model_name=llm.model_name,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _record_ai_usage(
+            db,
+            user_id=user.id,
+            endpoint="/ai/handwriting",
+            status="error",
+            provider="cursor",
+            model_name=os.getenv("CURSOR_MODEL", "auto"),
+            metadata_json={"error": str(exc)[:400]},
+        )
+        raise HTTPException(status_code=502, detail=f"Handwriting recognition failed: {exc}") from exc
+
 
 
 @router.get("/artifacts", response_model=list[ArtifactListItem])
@@ -317,14 +436,23 @@ def regenerate_artifact(
     title = payload.title or art.title
 
     try:
+        gen_kwargs = dict(
+            user_id=user.id,
+            course_id=course_id,
+            resource_ids=source_ids,
+            title=title,
+            section_keys=payload.section_keys,
+            page_start=payload.page_start,
+            page_end=payload.page_end,
+        )
         if art.artifact_type == "summary":
-            new_art = generate_summary(db, user_id=user.id, course_id=course_id, resource_ids=source_ids, title=title)
+            new_art = generate_summary(db, **gen_kwargs)
         elif art.artifact_type == "flashcards":
-            new_art = generate_flashcards(db, user_id=user.id, course_id=course_id, resource_ids=source_ids, title=title)
+            new_art = generate_flashcards(db, **gen_kwargs)
         elif art.artifact_type == "quiz":
-            new_art = generate_quiz(db, user_id=user.id, course_id=course_id, resource_ids=source_ids, title=title)
+            new_art = generate_quiz(db, **gen_kwargs)
         elif art.artifact_type == "sample_problems":
-            new_art = generate_sample_problems(db, user_id=user.id, course_id=course_id, resource_ids=source_ids, title=title)
+            new_art = generate_sample_problems(db, **gen_kwargs)
         else:
             raise HTTPException(status_code=422, detail=f"Unsupported artifact type: {art.artifact_type}")
     except ValueError as e:
@@ -354,19 +482,54 @@ def export_artifact(
             "metadata_json": art.metadata_json,
             "source_resource_ids_json": art.source_resource_ids_json,
         }
-    payload = {
-        "title": art.title,
-        "artifact_type": art.artifact_type,
-        "content_json": art.content_json,
-    }
-    markdown = f"# {art.title}\n\n```json\n{json.dumps(payload, indent=2)}\n```\n"
-    return {"markdown": markdown}
+    obj = art.content_json or {}
+    lines = [f"# {art.title}", ""]
+    if art.artifact_type == "summary":
+        for section in obj.get("sections") or []:
+            lines.append(f"## {section.get('heading') or 'Section'}")
+            for bullet in section.get("bullets") or []:
+                lines.append(f"- {bullet}")
+            lines.append("")
+    elif art.artifact_type == "flashcards":
+        for i, card in enumerate(obj.get("cards") or [], start=1):
+            lines.append(f"## Card {i}")
+            lines.append(f"**Q:** {card.get('question') or ''}")
+            lines.append(f"**A:** {card.get('answer') or ''}")
+            lines.append("")
+    elif art.artifact_type == "quiz":
+        for i, item in enumerate(obj.get("items") or [], start=1):
+            lines.append(f"## Q{i}. {item.get('question') or ''}")
+            lines.append(f"**Answer:** {item.get('answer') or ''}")
+            if item.get("explanation"):
+                lines.append(f"**Explanation:** {item['explanation']}")
+            lines.append("")
+    elif art.artifact_type == "sample_problems":
+        for i, problem in enumerate(obj.get("problems") or [], start=1):
+            lines.append(f"## Problem {i}")
+            lines.append(problem.get("problem") or "")
+            lines.append("")
+            lines.append(f"**Solution:** {problem.get('solution') or ''}")
+            lines.append("")
+    else:
+        lines.append("```json")
+        lines.append(json.dumps(obj, indent=2))
+        lines.append("```")
+    return {"markdown": "\n".join(lines).strip() + "\n"}
 
 
 @router.post("/summaries", response_model=SummaryResponse)
 def summaries(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
     try:
-        art = generate_summary(db, user_id=user.id, course_id=payload.course_id, resource_ids=payload.resource_ids, title=payload.title)
+        art = generate_summary(
+            db,
+            user_id=user.id,
+            course_id=payload.course_id,
+            resource_ids=payload.resource_ids,
+            title=payload.title,
+            section_keys=payload.section_keys,
+            page_start=payload.page_start,
+            page_end=payload.page_end,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ValidationError as e:
@@ -377,7 +540,7 @@ def summaries(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_re
         user_id=user.id,
         endpoint="/ai/summaries",
         status="ok",
-        metadata_json={"resource_count": len(payload.resource_ids)},
+        metadata_json={"resource_count": len(payload.resource_ids), "section_keys": payload.section_keys},
     )
     return SummaryResponse(artifact_id=art.id, title=art.title, sections=obj.get("sections", []), created_at=art.created_at)
 
@@ -385,7 +548,16 @@ def summaries(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_re
 @router.post("/flashcards", response_model=FlashcardsResponse)
 def flashcards(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
     try:
-        art = generate_flashcards(db, user_id=user.id, course_id=payload.course_id, resource_ids=payload.resource_ids, title=payload.title)
+        art = generate_flashcards(
+            db,
+            user_id=user.id,
+            course_id=payload.course_id,
+            resource_ids=payload.resource_ids,
+            title=payload.title,
+            section_keys=payload.section_keys,
+            page_start=payload.page_start,
+            page_end=payload.page_end,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ValidationError as e:
@@ -396,7 +568,7 @@ def flashcards(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_r
         user_id=user.id,
         endpoint="/ai/flashcards",
         status="ok",
-        metadata_json={"resource_count": len(payload.resource_ids)},
+        metadata_json={"resource_count": len(payload.resource_ids), "section_keys": payload.section_keys},
     )
     return FlashcardsResponse(artifact_id=art.id, title=art.title, cards=obj.get("cards", []), created_at=art.created_at)
 
@@ -404,7 +576,16 @@ def flashcards(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_r
 @router.post("/quizzes", response_model=QuizResponse)
 def quizzes(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
     try:
-        art = generate_quiz(db, user_id=user.id, course_id=payload.course_id, resource_ids=payload.resource_ids, title=payload.title)
+        art = generate_quiz(
+            db,
+            user_id=user.id,
+            course_id=payload.course_id,
+            resource_ids=payload.resource_ids,
+            title=payload.title,
+            section_keys=payload.section_keys,
+            page_start=payload.page_start,
+            page_end=payload.page_end,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ValidationError as e:
@@ -415,7 +596,7 @@ def quizzes(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_requ
         user_id=user.id,
         endpoint="/ai/quizzes",
         status="ok",
-        metadata_json={"resource_count": len(payload.resource_ids)},
+        metadata_json={"resource_count": len(payload.resource_ids), "section_keys": payload.section_keys},
     )
     return QuizResponse(artifact_id=art.id, title=art.title, items=obj.get("items", []), created_at=art.created_at)
 
@@ -423,7 +604,16 @@ def quizzes(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_requ
 @router.post("/sample-problems", response_model=SampleProblemsResponse)
 def sample_problems(payload: GenerateBaseRequest, db: Session = Depends(get_db_from_request), user=Depends(get_current_user)):
     try:
-        art = generate_sample_problems(db, user_id=user.id, course_id=payload.course_id, resource_ids=payload.resource_ids, title=payload.title)
+        art = generate_sample_problems(
+            db,
+            user_id=user.id,
+            course_id=payload.course_id,
+            resource_ids=payload.resource_ids,
+            title=payload.title,
+            section_keys=payload.section_keys,
+            page_start=payload.page_start,
+            page_end=payload.page_end,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except ValidationError as e:
@@ -434,7 +624,7 @@ def sample_problems(payload: GenerateBaseRequest, db: Session = Depends(get_db_f
         user_id=user.id,
         endpoint="/ai/sample-problems",
         status="ok",
-        metadata_json={"resource_count": len(payload.resource_ids)},
+        metadata_json={"resource_count": len(payload.resource_ids), "section_keys": payload.section_keys},
     )
     return SampleProblemsResponse(artifact_id=art.id, title=art.title, problems=obj.get("problems", []), created_at=art.created_at)
 

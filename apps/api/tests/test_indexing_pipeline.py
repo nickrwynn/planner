@@ -424,6 +424,55 @@ def test_index_resource_pdf_parse_error_is_classified(db_session, tmp_path, monk
     assert res.index_error_code == "pdf_parse_error"
 
 
+def test_index_resource_pdf_uses_global_chunk_indices(db_session, tmp_path, monkeypatch):
+    from app.parsing.pdf import ParsedPage
+
+    monkeypatch.setattr(
+        "app.indexing.pipeline.extract_pdf_pages",
+        lambda _path: [
+            ParsedPage(page_number=1, text="page one unique alpha " * 40),
+            ParsedPage(page_number=2, text="page two unique beta " * 40),
+        ],
+    )
+    user = User(email="pdf-chunks@test.dev", name="PdfChunks")
+    db_session.add(user)
+    db_session.commit()
+    f = tmp_path / "book.pdf"
+    f.write_bytes(b"%PDF fake")
+    res = Resource(
+        user_id=user.id,
+        course_id=None,
+        title="Multi-page PDF",
+        resource_type="file",
+        original_filename="book.pdf",
+        mime_type="application/pdf",
+        storage_path=str(f),
+        parse_status="uploaded",
+        ocr_status="pending",
+        index_status="pending",
+        lifecycle_state="uploaded",
+    )
+    db_session.add(res)
+    db_session.commit()
+
+    index_resource(db_session, resource_id=str(res.id))
+    db_session.refresh(res)
+    assert res.index_status == "done"
+    chunks = list(
+        db_session.execute(
+            select(ResourceChunk)
+            .where(ResourceChunk.resource_id == res.id)
+            .order_by(ResourceChunk.chunk_index.asc())
+        )
+        .scalars()
+        .all()
+    )
+    assert len(chunks) >= 2
+    indices = [c.chunk_index for c in chunks]
+    assert indices == list(range(len(chunks)))
+    assert {c.page_number for c in chunks} == {1, 2}
+
+
 def test_resource_diagnostics_summary_contains_error_codes(client, db_session):
     course = client.post("/courses", json={"name": "Diag Summary Course"}).json()
     upload = client.post(

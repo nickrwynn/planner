@@ -16,6 +16,10 @@ from app.api.routes.ai import router as ai_router
 from app.api.routes.notes import router as notes_router
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.planner import router as planner_router
+from app.api.routes.integrations_canvas import router as integrations_canvas_router
+from app.api.routes.integrations_google import router as integrations_google_router
+from app.api.routes.study_flows import router as study_flows_router
+from app.api.routes.auth import router as auth_router
 from app.api.middleware.rate_limit import RedisRateLimiter, make_rate_limit_middleware
 from app.core.telemetry import emit_diagnostic, setup_telemetry
 
@@ -49,7 +53,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     _assert_production_safe_settings(settings)
 
-    app = FastAPI(title="Academic OS API", version="0.1.0")
+    app = FastAPI(title="StudyFlows API", version="0.1.0")
     emit_diagnostic(
         "api_startup",
         service="api",
@@ -122,6 +126,7 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=503, content=status)
         return status
 
+    app.include_router(auth_router)
     app.include_router(courses_router)
     app.include_router(tasks_router)
     app.include_router(resources_router)
@@ -131,6 +136,9 @@ def create_app() -> FastAPI:
     app.include_router(notes_router)
     app.include_router(jobs_router)
     app.include_router(planner_router)
+    app.include_router(integrations_canvas_router)
+    app.include_router(integrations_google_router)
+    app.include_router(study_flows_router)
 
     if settings.telemetry_enabled:
         setup_telemetry(app, service_name=settings.telemetry_service_name)

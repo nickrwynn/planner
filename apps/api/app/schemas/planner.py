@@ -12,3 +12,16 @@ class PlannerNextResponse(BaseModel):
 
 class PlannerUpcomingResponse(BaseModel):
     tasks: list[TaskRead] = Field(default_factory=list)
+
+
+class PlannerLabelCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class PlannerLabelRead(BaseModel):
+    id: str
+    name: str
+    created_at: str
+    updated_at: str
+
+    model_config = {"from_attributes": True}

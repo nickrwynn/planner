@@ -29,7 +29,7 @@ type ApiMessage = {
   citations_json: Citation[] | null;
 };
 
-export function AgentPane() {
+export function AgentPane({ onCollapse }: { onCollapse?: () => void }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -122,7 +122,9 @@ export function AgentPane() {
         conversation_id: conversationId,
         course_id: scopeMode === "course" ? courseId || null : null,
         resource_ids: selectedIds.length > 0 ? selectedIds : null,
-        top_k: 8
+        top_k: 8,
+        allow_general_knowledge: true,
+        allow_web_lookup: true,
       });
       setConversationId(data.conversation_id);
       if (typeof window !== "undefined") {
@@ -192,6 +194,11 @@ export function AgentPane() {
           <button type="button" onClick={deleteChat} style={{ padding: "4px 8px", fontSize: 12 }} disabled={!conversationId}>
             Delete
           </button>
+          {onCollapse ? (
+            <button type="button" onClick={onCollapse} style={{ padding: "4px 8px", fontSize: 12 }} title="Minimize agent">
+              Minimize
+            </button>
+          ) : null}
         </div>
       </div>
 

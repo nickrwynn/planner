@@ -5,7 +5,7 @@ Scope: restore drill evidence required for release approval
 
 ## Candidate / Operational Context Binding
 
-- Candidate SHA: `BLOCKED`
+- Candidate SHA: `13caf46a39c53d1ba0725ed77f8a4c4eec838e9b`
 - Environment: `production`
 - Incident or drill: `BLOCKED`
 
@@ -33,8 +33,9 @@ Scope: restore drill evidence required for release approval
 
 - Required window: `<=30 days`
 - Freshness status: `BLOCKED`
+- Candidate linkage check: drill record must explicitly reference `13caf46a39c53d1ba0725ed77f8a4c4eec838e9b`.
 
 ## Status
 
 Current state: `BLOCKED`
-Blocker reason: no completed restore drill evidence attached yet.
+Blocker reason: no completed restore drill record with backup IDs, timestamps, validation outputs, and pass/fail outcome is attached for the current freshness window.

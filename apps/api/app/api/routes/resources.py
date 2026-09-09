@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import mimetypes
 import shutil
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -30,7 +32,10 @@ from app.services import courses as course_service
 from app.services import resources as resource_service
 from app.services import jobs as job_service
 from app.services.resource_lifecycle import record_resource_event, transition_resource_lifecycle
+from app.services.resource_sections import list_resource_sections
+from app.services.resource_to_notes import send_resource_to_notes
 from app.services.storage import get_storage_service
+from pydantic import BaseModel
 router = APIRouter(prefix="/resources", tags=["resources"])
 
 _CHUNK_PREVIEW_LEN = 500
@@ -98,6 +103,16 @@ def _is_allowed_upload_mime(mime: str | None) -> bool:
     return normalized.startswith("text/")
 
 
+def _resolve_upload_mime(content_type: str | None, filename: str | None) -> str | None:
+    normalized = (content_type or "").lower().strip()
+    if normalized:
+        return normalized
+    guessed, _ = mimetypes.guess_type(filename or "")
+    if guessed:
+        return guessed.lower().strip()
+    return None
+
+
 async def _read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
     size = 0
     chunks: list[bytes] = []
@@ -154,15 +169,16 @@ async def upload_resource(
     storage = get_storage_service(settings)
 
     data = await _read_upload_limited(file, _MAX_UPLOAD_BYTES)
-    if not _is_allowed_upload_mime(file.content_type):
+    safe_filename = Path(file.filename or "upload.bin").name or "upload.bin"
+    resolved_mime_type = _resolve_upload_mime(file.content_type, safe_filename)
+    if not _is_allowed_upload_mime(resolved_mime_type):
         emit_diagnostic(
             "resource_upload_rejected_mime",
             level="warning",
             user_id=str(user.id),
-            mime_type=file.content_type or "unknown",
+            mime_type=resolved_mime_type or "unknown",
         )
-        raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type or 'unknown'}")
-    safe_filename = Path(file.filename or "upload.bin").name or "upload.bin"
+        raise HTTPException(status_code=415, detail=f"Unsupported file type: {resolved_mime_type or 'unknown'}")
 
     # Store under uploads/<resource_id>/<original_filename>
     resource = Resource(
@@ -171,7 +187,7 @@ async def upload_resource(
         title=title or safe_filename or "Untitled",
         resource_type=resource_type or "file",
         original_filename=safe_filename,
-        mime_type=file.content_type,
+        mime_type=resolved_mime_type,
         parse_status="uploaded",
         ocr_status="pending",
         index_status="pending",
@@ -188,7 +204,7 @@ async def upload_resource(
         resource=resource,
         event_type="resource.uploaded",
         to_state=resource.lifecycle_state,
-        details={"filename": safe_filename, "mime_type": file.content_type},
+        details={"filename": safe_filename, "mime_type": resolved_mime_type},
     )
     db.commit()
 
@@ -208,6 +224,7 @@ async def upload_resource(
             user=user,
             resource=resource,
             idempotency_key=f"upload:{resource.id}",
+            enqueue=False,
         )
     except Exception as exc:  # noqa: BLE001
         emit_diagnostic(
@@ -234,6 +251,8 @@ async def upload_resource(
     )
     db.commit()
     db.refresh(resource)
+    # Enqueue only after queued lifecycle is durable, avoiding worker/API seq races.
+    job_service.enqueue_job(r, job)
     emit_diagnostic(
         "resource_upload_enqueued",
         user_id=str(user.id),
@@ -268,6 +287,7 @@ async def upload_resource_batch(
 
     for file in files:
         safe_filename = Path(file.filename or "upload.bin").name or "upload.bin"
+        resolved_mime_type = _resolve_upload_mime(file.content_type, safe_filename)
         try:
             data = await _read_upload_limited(file, _MAX_UPLOAD_BYTES)
         except HTTPException:
@@ -280,26 +300,26 @@ async def upload_resource_batch(
             results.append(
                 ResourceBatchUploadResult(
                     filename=safe_filename,
-                    mime_type=file.content_type,
+                    mime_type=resolved_mime_type,
                     status="rejected",
                     reason=f"file too large (max {_MAX_UPLOAD_BYTES} bytes)",
                 )
             )
             continue
-        if not _is_allowed_upload_mime(file.content_type):
+        if not _is_allowed_upload_mime(resolved_mime_type):
             emit_diagnostic(
                 "resource_batch_file_rejected_mime",
                 level="warning",
                 user_id=str(user.id),
                 filename=safe_filename,
-                mime_type=file.content_type or "unknown",
+                mime_type=resolved_mime_type or "unknown",
             )
             results.append(
                 ResourceBatchUploadResult(
                     filename=safe_filename,
-                    mime_type=file.content_type,
+                    mime_type=resolved_mime_type,
                     status="rejected",
-                    reason=f"unsupported file type: {file.content_type or 'unknown'}",
+                    reason=f"unsupported file type: {resolved_mime_type or 'unknown'}",
                 )
             )
             continue
@@ -309,7 +329,7 @@ async def upload_resource_batch(
             title=safe_filename,
             resource_type=resource_type or "file",
             original_filename=safe_filename,
-            mime_type=file.content_type,
+            mime_type=resolved_mime_type,
             parse_status="uploaded",
             ocr_status="pending",
             index_status="pending",
@@ -326,7 +346,7 @@ async def upload_resource_batch(
             resource=resource,
             event_type="resource.uploaded",
             to_state=resource.lifecycle_state,
-            details={"filename": safe_filename, "mime_type": file.content_type},
+            details={"filename": safe_filename, "mime_type": resolved_mime_type},
         )
         db.commit()
 
@@ -344,6 +364,7 @@ async def upload_resource_batch(
                 user=user,
                 resource=resource,
                 idempotency_key=f"upload:{resource.id}",
+                enqueue=False,
             )
         except Exception as exc:  # noqa: BLE001
             emit_diagnostic(
@@ -358,7 +379,7 @@ async def upload_resource_batch(
             results.append(
                 ResourceBatchUploadResult(
                     filename=safe_filename,
-                    mime_type=file.content_type,
+                    mime_type=resolved_mime_type,
                     status="rejected",
                     reason="enqueue failed",
                 )
@@ -378,10 +399,11 @@ async def upload_resource_batch(
         db.add(resource)
         db.commit()
         db.refresh(resource)
+        job_service.enqueue_job(r, job)
         results.append(
             ResourceBatchUploadResult(
                 filename=safe_filename,
-                mime_type=file.content_type,
+                mime_type=resolved_mime_type,
                 status="accepted",
                 resource=ResourceRead.model_validate(resource),
             )
@@ -413,7 +435,8 @@ def list_resource_jobs(
 @router.get("/{resource_id}/chunks", response_model=list[ResourceChunkPreview])
 def list_resource_chunks(
     resource_id: UUID,
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=2000),
+    full: bool = Query(default=False),
     db: Session = Depends(get_db_from_request),
     user=Depends(get_current_user),
 ):
@@ -439,9 +462,88 @@ def list_resource_chunks(
             chunk_index=c.chunk_index,
             page_number=c.page_number,
             text_preview=(c.text[:_CHUNK_PREVIEW_LEN] + ("…" if len(c.text) > _CHUNK_PREVIEW_LEN else "")),
+            text=c.text if full else None,
         )
         for c in rows
     ]
+
+
+class ResourceSectionRead(BaseModel):
+    key: str
+    title: str
+    kind: str
+    page_start: int | None = None
+    page_end: int | None = None
+    chunk_index_start: int
+
+
+@router.get("/{resource_id}/sections", response_model=list[ResourceSectionRead])
+def list_sections(
+    resource_id: UUID,
+    db: Session = Depends(get_db_from_request),
+    user=Depends(get_current_user),
+):
+    """Discover chapter/section headings from indexed PDF text for Study Lab scoping."""
+    try:
+        sections = list_resource_sections(db, user=user, resource_id=resource_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return [
+        ResourceSectionRead(
+            key=s.key,
+            title=s.title,
+            kind=s.kind,
+            page_start=s.page_start,
+            page_end=s.page_end,
+            chunk_index_start=s.chunk_index_start,
+        )
+        for s in sections
+    ]
+
+
+@router.get("/{resource_id}/content")
+def get_resource_content(
+    resource_id: UUID,
+    db: Session = Depends(get_db_from_request),
+    user=Depends(get_current_user),
+):
+    """Stream original uploaded/synced file bytes (for PDF reader / download)."""
+    resource = resource_service.get_resource_for_user(db, user=user, resource_id=resource_id)
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if not resource.storage_path:
+        raise HTTPException(status_code=404, detail="Resource has no file content")
+    if str(resource.storage_path).startswith("s3://"):
+        raise HTTPException(status_code=501, detail="S3 content streaming not implemented yet")
+    path = Path(resource.storage_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Stored file missing")
+    filename = resource.original_filename or path.name
+    media = resource.mime_type or "application/octet-stream"
+    return FileResponse(path, media_type=media, filename=filename)
+
+
+class ResourceSendToNotesResult(BaseModel):
+    notebook_id: str
+    note_document_id: str
+    pages_created: int
+    resource_id: str
+
+
+@router.post("/{resource_id}/send-to-notes", response_model=ResourceSendToNotesResult)
+def send_to_notes(
+    resource_id: UUID,
+    db: Session = Depends(get_db_from_request),
+    user=Depends(get_current_user),
+):
+    resource = resource_service.get_resource_for_user(db, user=user, resource_id=resource_id)
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    try:
+        result = send_resource_to_notes(db, user=user, resource=resource)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ResourceSendToNotesResult(**result)
 
 
 @router.get("/{resource_id}", response_model=ResourceRead)
@@ -643,6 +745,28 @@ def reindex_resource(resource_id: UUID, db: Session = Depends(get_db_from_reques
     resource = resource_service.get_resource_for_user(db, user=user, resource_id=resource_id)
     if not resource:
         raise HTTPException(status_code=404, detail="Resource not found")
+
+    settings = get_settings()
+    r = Redis.from_url(settings.redis_url)
+
+    # Canvas pages that only captured a file link label → pull the embedded PDF/media.
+    if resource.source_type == "canvas_page":
+        try:
+            from app.services import canvas_sync as canvas_sync_service
+
+            repaired = canvas_sync_service.repair_thin_canvas_page(
+                db, redis=r, user=user, resource=resource
+            )
+            if repaired is not None and repaired.id != resource.id:
+                db.commit()
+                return repaired
+            if repaired is not None:
+                resource = repaired
+                db.commit()
+                db.refresh(resource)
+        except Exception:  # noqa: BLE001
+            pass
+
     if not resource.storage_path:
         emit_diagnostic(
             "resource_reindex_blocked_missing_storage",
@@ -653,15 +777,17 @@ def reindex_resource(resource_id: UUID, db: Session = Depends(get_db_from_reques
         )
         raise HTTPException(status_code=409, detail="Resource has no storage_path and cannot be reindexed")
 
-    settings = get_settings()
-    r = Redis.from_url(settings.redis_url)
+    # Unique key per request so a prior completed reindex job is not reused while
+    # we reset lifecycle/index flags (which would leave the resource stuck "queued").
+    reindex_key = f"reindex:{resource.id}:{uuid4()}"
     try:
         job = job_service.create_and_enqueue_parse(
             db,
             redis=r,
             user=user,
             resource=resource,
-            idempotency_key=f"reindex:{resource.id}",
+            idempotency_key=reindex_key,
+            enqueue=False,
         )
     except Exception as exc:  # noqa: BLE001
         emit_diagnostic(
@@ -703,6 +829,7 @@ def reindex_resource(resource_id: UUID, db: Session = Depends(get_db_from_reques
     db.add(resource)
     db.commit()
     db.refresh(resource)
+    job_service.enqueue_job(r, job)
     emit_diagnostic(
         "resource_reindex_requested",
         resource_id=str(resource.id),

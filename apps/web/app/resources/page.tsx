@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { EmptyState, ErrorState, LoadingState } from "../../components/async-state";
+import { ContentState, EmptyState, ErrorState, LoadingState } from "../../components/async-state";
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm, toErrorMessage } from "../../lib/api";
 import type { Course, Resource, ResourceBatchUploadResult } from "../../lib/types";
 
@@ -222,29 +222,33 @@ export default function ResourcesPage() {
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Resources</div>
         <div style={{ display: "grid", gap: 8 }}>
           {isLoading ? <LoadingState label="Loading..." /> : null}
-          {resources.map((r) => (
-            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  <Link href={`/resources/${r.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                    {r.title}
-                  </Link>
+          {!isLoading && !error && resources.length > 0 ? (
+            <ContentState>
+              {resources.map((r) => (
+                <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      <Link href={`/resources/${r.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                        {r.title}
+                      </Link>
+                    </div>
+                    <div style={{ color: "#555", fontSize: 13 }}>
+                      {r.resource_type ?? "—"} • parse={r.parse_status} • ocr={r.ocr_status} • index={r.index_status}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => onRename(r)} style={{ padding: "6px 10px" }}>
+                      Rename
+                    </button>
+                    <button onClick={() => onDelete(r)} style={{ padding: "6px 10px" }}>
+                      Delete
+                    </button>
+                    <div style={{ color: "#555", fontSize: 12 }}>{r.id}</div>
+                  </div>
                 </div>
-                <div style={{ color: "#555", fontSize: 13 }}>
-                  {r.resource_type ?? "—"} • parse={r.parse_status} • ocr={r.ocr_status} • index={r.index_status}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => onRename(r)} style={{ padding: "6px 10px" }}>
-                  Rename
-                </button>
-                <button onClick={() => onDelete(r)} style={{ padding: "6px 10px" }}>
-                  Delete
-                </button>
-                <div style={{ color: "#555", fontSize: 12 }}>{r.id}</div>
-              </div>
-            </div>
-          ))}
+              ))}
+            </ContentState>
+          ) : null}
           {!isLoading && !error && resources.length === 0 ? (
             <EmptyState message="No resources for this course yet." />
           ) : null}

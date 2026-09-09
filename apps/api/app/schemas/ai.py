@@ -20,12 +20,34 @@ class AskRequest(BaseModel):
     course_id: UUID | None = None
     resource_ids: list[UUID] | None = None
     top_k: int = Field(default=8, ge=1, le=20)
+    # Hybrid by default: use course sources when present, otherwise general knowledge / web notes.
+    allow_general_knowledge: bool = True
+    allow_web_lookup: bool = True
 
 
 class AskResponse(BaseModel):
     conversation_id: UUID
     answer: str
     citations: list[Citation]
+
+
+class AiStatusResponse(BaseModel):
+    configured: bool
+    provider: str | None = None
+    model: str | None = None
+    message: str
+
+
+class HandwritingRequest(BaseModel):
+    image_base64: str = Field(min_length=8)
+    mode: str = Field(default="text", pattern="^(text|math)$")
+
+
+class HandwritingResponse(BaseModel):
+    text: str
+    latex: str | None = None
+    provider: str
+    model_name: str | None = None
 
 
 class MessageRead(BaseModel):

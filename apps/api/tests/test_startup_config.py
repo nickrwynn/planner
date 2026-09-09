@@ -35,7 +35,7 @@ def test_create_app_accepts_valid_prod_profile(monkeypatch):
     get_settings.cache_clear()
 
     app = create_app()
-    assert app.title == "Academic OS API"
+    assert app.title == "StudyFlows API"
 
 
 def test_create_app_rejects_non_bearer_auth_mode_in_prod(monkeypatch):
@@ -98,7 +98,7 @@ def test_create_app_accepts_prod_runtime_profile_with_dev_app_env(monkeypatch):
     get_settings.cache_clear()
 
     app = create_app()
-    assert app.title == "Academic OS API"
+    assert app.title == "StudyFlows API"
 
 
 def test_create_app_accepts_prod_app_env_without_runtime_prod(monkeypatch):
@@ -108,7 +108,7 @@ def test_create_app_accepts_prod_app_env_without_runtime_prod(monkeypatch):
     get_settings.cache_clear()
 
     app = create_app()
-    assert app.title == "Academic OS API"
+    assert app.title == "StudyFlows API"
 
 
 def test_health_returns_503_when_dependency_check_degraded(monkeypatch):

@@ -33,6 +33,7 @@ class ResourceChunkPreview(BaseModel):
     chunk_index: int
     page_number: int | None
     text_preview: str
+    text: str | None = None
 
     model_config = {"from_attributes": True}
 

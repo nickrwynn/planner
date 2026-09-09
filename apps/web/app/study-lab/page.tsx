@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { EmptyState, ErrorState, LoadingState } from "../../components/async-state";
+import { StudyArtifactView } from "../../components/study-artifact-view";
+import { ContentState, EmptyState, ErrorState, LoadingState } from "../../components/async-state";
 import { apiGet, apiPatch, apiPost, toErrorMessage } from "../../lib/api";
 import type { Course, Resource } from "../../lib/types";
 
@@ -212,7 +213,7 @@ export default function StudyLabPage() {
         </div>
 
         <div style={{ marginTop: 12, color: "#555", fontSize: 13 }}>
-          Select resources below. Generation requires OPENAI_API_KEY on the API container.
+          Select resources below. Full LLM generation needs CURSOR_API_KEY on the API.
         </div>
 
         {error ? <ErrorState message={error} onRetry={() => refresh()} /> : null}
@@ -221,20 +222,24 @@ export default function StudyLabPage() {
       <div className="card">
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Resources</div>
         <div style={{ display: "grid", gap: 6 }}>
-          {resources.map((r) => (
-            <label key={r.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={!!selected[r.id]}
-                onChange={(e) => setSelected((prev) => ({ ...prev, [r.id]: e.target.checked }))}
-              />
-              <span style={{ fontWeight: 600 }}>{r.title}</span>
-              <span style={{ color: "#555", fontSize: 12 }}>
-                {r.resource_type ?? "—"} • index={r.index_status}
-              </span>
-            </label>
-          ))}
           {isLoading ? <LoadingState label="Loading resources..." /> : null}
+          {!isLoading && !error && resources.length > 0 ? (
+            <ContentState>
+              {resources.map((r) => (
+                <label key={r.id} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={!!selected[r.id]}
+                    onChange={(e) => setSelected((prev) => ({ ...prev, [r.id]: e.target.checked }))}
+                  />
+                  <span style={{ fontWeight: 600 }}>{r.title}</span>
+                  <span style={{ color: "#555", fontSize: 12 }}>
+                    {r.resource_type ?? "—"} • index={r.index_status}
+                  </span>
+                </label>
+              ))}
+            </ContentState>
+          ) : null}
           {!isLoading && !error && resources.length === 0 ? <EmptyState message="No resources in this course yet." /> : null}
         </div>
       </div>
@@ -290,27 +295,34 @@ export default function StudyLabPage() {
                   Export Markdown
                 </button>
               </div>
-              <pre
-                style={{
-                  background: "#0b1020",
-                  color: "#e6edf3",
-                  padding: 12,
-                  borderRadius: 6,
-                  overflowX: "auto",
-                  fontSize: 12,
-                  maxHeight: 420
-                }}
-              >
-                {JSON.stringify(
-                  {
-                    content_json: artifactDetail.content_json,
-                    metadata_json: artifactDetail.metadata_json,
-                    sources: artifactDetail.source_resource_ids_json
-                  },
-                  null,
-                  2
-                )}
-              </pre>
+              <StudyArtifactView
+                artifactType={artifactDetail.artifact_type}
+                content={artifactDetail.content_json}
+              />
+              <details>
+                <summary style={{ cursor: "pointer", color: "#555", fontSize: 12 }}>Raw JSON</summary>
+                <pre
+                  style={{
+                    background: "#0b1020",
+                    color: "#e6edf3",
+                    padding: 12,
+                    borderRadius: 6,
+                    overflowX: "auto",
+                    fontSize: 12,
+                    maxHeight: 280,
+                  }}
+                >
+                  {JSON.stringify(
+                    {
+                      content_json: artifactDetail.content_json,
+                      metadata_json: artifactDetail.metadata_json,
+                      sources: artifactDetail.source_resource_ids_json,
+                    },
+                    null,
+                    2
+                  )}
+                </pre>
+              </details>
             </div>
           )}
         </div>

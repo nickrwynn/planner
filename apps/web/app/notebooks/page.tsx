@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { EmptyState, ErrorState, LoadingState } from "../../components/async-state";
+import { ContentState, EmptyState, ErrorState, LoadingState } from "../../components/async-state";
 import { apiDelete, apiGet, apiPatch, apiPost, toErrorMessage } from "../../lib/api";
 import type { Course, Notebook } from "../../lib/types";
 
@@ -132,29 +132,33 @@ export default function NotebooksPage() {
         <div style={{ fontWeight: 600, marginBottom: 8 }}>Notebooks</div>
         <div style={{ display: "grid", gap: 8 }}>
           {isLoading ? <LoadingState label="Loading..." /> : null}
-          {notebooks.map((n) => (
-            <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  <Link href={`/notebooks/${n.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                    {n.title}
-                  </Link>
+          {!isLoading && !error && notebooks.length > 0 ? (
+            <ContentState>
+              {notebooks.map((n) => (
+                <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>
+                      <Link href={`/notebooks/${n.id}`} style={{ textDecoration: "none", color: "inherit" }}>
+                        {n.title}
+                      </Link>
+                    </div>
+                    <div style={{ color: "#555", fontSize: 13 }}>
+                      course={n.course_id ?? "—"} • parent={n.parent_id ?? "root"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button onClick={() => onRename(n)} style={{ padding: "6px 10px" }}>
+                      Rename
+                    </button>
+                    <button onClick={() => onDelete(n)} style={{ padding: "6px 10px" }}>
+                      Delete
+                    </button>
+                    <div style={{ color: "#555", fontSize: 12 }}>{n.id}</div>
+                  </div>
                 </div>
-                <div style={{ color: "#555", fontSize: 13 }}>
-                  course={n.course_id ?? "—"} • parent={n.parent_id ?? "root"}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => onRename(n)} style={{ padding: "6px 10px" }}>
-                  Rename
-                </button>
-                <button onClick={() => onDelete(n)} style={{ padding: "6px 10px" }}>
-                  Delete
-                </button>
-                <div style={{ color: "#555", fontSize: 12 }}>{n.id}</div>
-              </div>
-            </div>
-          ))}
+              ))}
+            </ContentState>
+          ) : null}
           {!isLoading && !error && notebooks.length === 0 ? (
             <EmptyState message="No notebooks for this course yet." />
           ) : null}

@@ -6,7 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "../../../components/async-
 import { apiGet, toErrorMessage } from "../../../lib/api";
 import type { Course, Notebook, Resource, Task } from "../../../lib/types";
 
-export default function CourseDetailPage({ params }: { params: { id: string } }) {
+export default function CourseOverviewPage({ params }: { params: { id: string } }) {
   const [course, setCourse] = useState<Course | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -23,8 +23,7 @@ export default function CourseDetailPage({ params }: { params: { id: string } })
     setError(null);
     setIsLoading(true);
     try {
-      const c = await apiGet<Course>(`/courses/${params.id}`);
-      setCourse(c);
+      setCourse(await apiGet<Course>(`/courses/${params.id}`));
       setTasks(await apiGet<Task[]>(`/courses/${params.id}/tasks`));
       setResources(await apiGet<Resource[]>(`/resources?course_id=${encodeURIComponent(params.id)}`));
       setNotebooks(await apiGet<Notebook[]>(`/notebooks?course_id=${encodeURIComponent(params.id)}`));
@@ -40,90 +39,78 @@ export default function CourseDetailPage({ params }: { params: { id: string } })
     refresh();
   }, [refresh]);
 
+  const openTasks = tasks.filter((t) => t.status !== "done");
+  const base = `/courses/${params.id}`;
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <h1 style={{ margin: 0 }}>Course</h1>
+      <div>
+        <h1 style={{ margin: 0 }}>Overview</h1>
+        <p className="pageIntro">Everything for this course in one place.</p>
+      </div>
+
       {error ? <ErrorState message={error} onRetry={refresh} /> : null}
-      {isLoading ? <LoadingState label="Loading course..." /> : null}
+      {isLoading ? <LoadingState label="Loading overview..." /> : null}
+
+      {!isLoading && !error && course ? (
+        <>
+          <div className="card" style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 700, fontSize: 18 }}>{course.name}</div>
+            <div style={{ color: "#555" }}>
+              {course.code ?? "No code"} · {course.term ?? "No term"}
+            </div>
+            <div className="statRow">
+              <span>{openTasks.length} open task(s)</span>
+              <span>{resources.length} resource(s)</span>
+              <span>{notebooks.length} notebook(s)</span>
+              {gradeSummary ? (
+                <span>
+                  {gradeSummary.weighted_completion_pct}% complete ({gradeSummary.done_tasks}/
+                  {gradeSummary.total_tasks})
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+            {[
+              { href: `${base}/resources`, label: "Resources", detail: `${resources.length} files` },
+              { href: `${base}/notebooks`, label: "Notebooks", detail: `${notebooks.length} notebooks` },
+              { href: `${base}/tasks`, label: "Tasks", detail: `${openTasks.length} open` },
+              { href: `${base}/study-flows`, label: "StudyFlows", detail: "Read & practice" },
+              { href: `${base}/study-lab`, label: "Study Lab", detail: "Summaries & practice" },
+            ].map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="card"
+                style={{ textDecoration: "none", color: "inherit", display: "grid", gap: 4 }}
+              >
+                <div style={{ fontWeight: 700 }}>{item.label}</div>
+                <div style={{ color: "#555", fontSize: 13 }}>{item.detail}</div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="card">
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Open tasks</div>
+            {openTasks.length === 0 ? (
+              <EmptyState message="No open tasks. Add some under Tasks." />
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {openTasks.slice(0, 6).map((t) => (
+                  <li key={t.id} style={{ marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600 }}>{t.title}</span>
+                    {t.due_at ? <span style={{ color: "#555", marginLeft: 8 }}>due {t.due_at}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      ) : null}
+
       {!isLoading && !error && !course ? <EmptyState message="Course not found." /> : null}
-      {course && (
-        <div className="card" style={{ display: "grid", gap: 6 }}>
-          <div style={{ fontWeight: 700, fontSize: 18 }}>{course.name}</div>
-          <div style={{ color: "#555" }}>
-            {course.code ?? "—"} • {course.term ?? "—"}
-          </div>
-          <div style={{ display: "flex", gap: 12, color: "#555", fontSize: 13 }}>
-            <span>{tasks.length} task(s)</span>
-            <span>{resources.length} resource(s)</span>
-            <span>{notebooks.length} notebook(s)</span>
-            {gradeSummary ? (
-              <span>
-                completion={gradeSummary.weighted_completion_pct}% ({gradeSummary.done_tasks}/{gradeSummary.total_tasks})
-              </span>
-            ) : null}
-          </div>
-          <div style={{ display: "flex", gap: 12, fontSize: 13 }}>
-            <a href="/tasks">Open tasks</a>
-            <a href="/resources">Open resources</a>
-            <a href="/notes">Open notes</a>
-          </div>
-          <div style={{ color: "#555", fontSize: 12 }}>id: {course.id}</div>
-        </div>
-      )}
-
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Tasks</div>
-        <div style={{ display: "grid", gap: 6 }}>
-          {tasks.map((t) => (
-            <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>{t.title}</div>
-                <div style={{ color: "#555", fontSize: 12 }}>{t.status}</div>
-              </div>
-              <div style={{ color: "#555", fontSize: 12 }}>{t.id}</div>
-            </div>
-          ))}
-          {!isLoading && !error && tasks.length === 0 ? <EmptyState message="No tasks." /> : null}
-        </div>
-      </div>
-
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Resources</div>
-        <div style={{ display: "grid", gap: 6 }}>
-          {resources.map((r) => (
-            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 600 }}>
-                  <Link href={`/resources/${r.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                    {r.title}
-                  </Link>
-                </div>
-                <div style={{ color: "#555", fontSize: 12 }}>index={r.index_status}</div>
-              </div>
-              <div style={{ color: "#555", fontSize: 12 }}>{r.id}</div>
-            </div>
-          ))}
-          {!isLoading && !error && resources.length === 0 ? <EmptyState message="No resources." /> : null}
-        </div>
-      </div>
-
-      <div className="card">
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>Notebooks</div>
-        <div style={{ display: "grid", gap: 6 }}>
-          {notebooks.map((n) => (
-            <div key={n.id} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontWeight: 600 }}>
-                <Link href={`/notebooks/${n.id}`} style={{ textDecoration: "none", color: "inherit" }}>
-                  {n.title}
-                </Link>
-              </div>
-              <div style={{ color: "#555", fontSize: 12 }}>{n.id}</div>
-            </div>
-          ))}
-          {!isLoading && !error && notebooks.length === 0 ? <EmptyState message="No notebooks." /> : null}
-        </div>
-      </div>
     </div>
   );
 }
-

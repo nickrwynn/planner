@@ -18,4 +18,7 @@ from app.models.background_job import BackgroundJob  # noqa: E402,F401
 from app.models.dead_letter_job import DeadLetterJob  # noqa: E402,F401
 from app.models.ai_usage_log import AIUsageLog  # noqa: E402,F401
 from app.models.resource_lifecycle_event import ResourceLifecycleEvent  # noqa: E402,F401
+from app.models.integration_credential import IntegrationCredential  # noqa: E402,F401
+from app.models.study_flow import StudyFlow, StudyFlowRun, StudyFlowStep  # noqa: E402,F401
+from app.models.planner_label import PlannerLabel  # noqa: E402,F401
 
