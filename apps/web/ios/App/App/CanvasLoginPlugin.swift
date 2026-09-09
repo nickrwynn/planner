@@ -6,9 +6,8 @@ import Capacitor
 /// Opens an in-app Canvas login WebView, waits for NetID/Duo, then reads the
 /// HttpOnly `canvas_session` cookie and returns it to JS.
 ///
-/// Important: Canvas often sets an anonymous `canvas_session` on the login page
-/// before the user authenticates. We only succeed after `/api/v1/users/self`
-/// accepts the cookie.
+/// Canvas often sets an anonymous `canvas_session` before auth. We only succeed
+/// after `/api/v1/users/self` works **inside the WebView** (same cookie jar).
 @objc(CanvasLoginPlugin)
 public class CanvasLoginPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "CanvasLoginPlugin"
@@ -68,7 +67,6 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
     private var pollTimer: Timer?
     private var finished = false
     private var verifying = false
-    private var lastRejectedCookie: String?
     private var statusLabel: UILabel!
 
     init(baseURL: URL, completion: @escaping (CanvasLoginResult) -> Void) {
@@ -92,9 +90,15 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
             target: self,
             action: #selector(cancelTapped)
         )
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: "I'm signed in",
+            style: .done,
+            target: self,
+            action: #selector(manualContinueTapped)
+        )
 
         statusLabel = UILabel()
-        statusLabel.text = "Log in with NetID / Duo. Keep this open until Canvas finishes — we’ll connect automatically."
+        statusLabel.text = "Log in with NetID / Duo below. When Canvas opens, we connect automatically — or tap I'm signed in."
         statusLabel.font = .preferredFont(forTextStyle: .footnote)
         statusLabel.textColor = .secondaryLabel
         statusLabel.numberOfLines = 0
@@ -103,6 +107,9 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
         let config = WKWebViewConfiguration()
         config.websiteDataStore = dataStore
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        if #available(iOS 14.0, *) {
+            config.defaultWebpagePreferences.preferredContentMode = .mobile
+        }
 
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
@@ -123,12 +130,10 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
             webView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
 
-        // Landing on /login is fine; SAML/CAS/Duo may leave this host temporarily.
-        let loginURL = baseURL.appendingPathComponent("login")
-        webView.load(URLRequest(url: loginURL))
+        webView.load(URLRequest(url: baseURL.appendingPathComponent("login")))
 
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.25, repeats: true) { [weak self] _ in
-            self?.checkForAuthenticatedSession()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.attemptCapture(reason: "poll")
         }
     }
 
@@ -138,6 +143,11 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
 
     @objc private func cancelTapped() {
         finish(.cancelled)
+    }
+
+    @objc private func manualContinueTapped() {
+        statusLabel.text = "Checking your Canvas login…"
+        attemptCapture(reason: "manual")
     }
 
     private func finish(_ result: CanvasLoginResult) {
@@ -150,59 +160,83 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
         }
     }
 
-    private func checkForAuthenticatedSession() {
+    private func attemptCapture(reason: String) {
         guard !finished, !verifying else { return }
+        verifying = true
 
-        dataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self, !self.finished, !self.verifying else { return }
-            guard let cookie = cookies.first(where: { self.isCanvasSessionCookie($0) }) else { return }
-            let value = cookie.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty else { return }
-            // Skip cookies we already proved are anonymous / invalid.
-            if value == self.lastRejectedCookie { return }
+        // Verify inside the WebView so we use the exact SSO cookie jar (including
+        // cookies URLSession would not see the same way).
+        let js = """
+        (async function() {
+          try {
+            const res = await fetch('/api/v1/users/self', {
+              credentials: 'include',
+              headers: { 'Accept': 'application/json' }
+            });
+            if (!res.ok) return JSON.stringify({ ok: false, status: res.status });
+            const user = await res.json();
+            if (!user || !user.id) return JSON.stringify({ ok: false, status: res.status });
+            return JSON.stringify({ ok: true, id: String(user.id), name: user.name || '' });
+          } catch (e) {
+            return JSON.stringify({ ok: false, error: String(e) });
+          }
+        })();
+        """
 
-            self.verifying = true
-            DispatchQueue.main.async {
-                self.statusLabel.text = "Checking Canvas login…"
+        // fetch relative URL only works on the Canvas origin; if still on CAS/Duo, skip.
+        let host = (webView.url?.host ?? "").lowercased()
+        let canvasHost = (baseURL.host ?? "").lowercased()
+        let onCanvasHost = !canvasHost.isEmpty && (host == canvasHost || host.hasSuffix("." + canvasHost) || canvasHost.hasSuffix("." + host))
+
+        guard onCanvasHost else {
+            verifying = false
+            if reason == "manual" {
+                statusLabel.text = "Finish Duo, wait until you see Canvas, then tap I'm signed in."
+            }
+            return
+        }
+
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            guard let self, !self.finished else { return }
+
+            func fail(_ message: String) {
+                self.verifying = false
+                if reason == "manual" {
+                    self.statusLabel.text = message
+                }
             }
 
-            self.verifyCanvasUser(sessionCookie: value) { ok in
+            if let error {
+                fail("Still on Canvas, but login check failed. Tap I'm signed in again. (\(error.localizedDescription))")
+                return
+            }
+
+            let raw = (result as? String) ?? ""
+            guard
+                let data = raw.data(using: .utf8),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                (json["ok"] as? Bool) == true
+            else {
+                let status = (try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])?["status"]
+                fail("Canvas is open, but you're not fully signed in yet (status \(status ?? "n/a")). Finish login, then tap I'm signed in.")
+                return
+            }
+
+            self.dataStore.httpCookieStore.getAllCookies { cookies in
+                let session = cookies.first(where: { self.isCanvasSessionCookie($0) })?.value
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 DispatchQueue.main.async {
                     self.verifying = false
                     guard !self.finished else { return }
-                    if ok {
-                        self.statusLabel.text = "Signed in — connecting StudyFlows…"
-                        self.finish(.success(value))
-                    } else {
-                        self.lastRejectedCookie = value
-                        self.statusLabel.text = "Waiting for NetID / Duo… finish login in the page below."
+                    guard let session, !session.isEmpty else {
+                        self.statusLabel.text = "Signed into Canvas in the browser, but no canvas_session cookie was found. Try Cancel and sign in again."
+                        return
                     }
+                    self.statusLabel.text = "Signed in — connecting StudyFlows…"
+                    self.finish(.success(session))
                 }
             }
         }
-    }
-
-    private func verifyCanvasUser(sessionCookie: String, completion: @escaping (Bool) -> Void) {
-        let url = baseURL.appendingPathComponent("api/v1/users/self")
-        var request = URLRequest(url: url, timeoutInterval: 15)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("canvas_session=\(sessionCookie)", forHTTPHeaderField: "Cookie")
-
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200, let data else {
-                completion(false)
-                return
-            }
-            guard
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                json["id"] != nil
-            else {
-                completion(false)
-                return
-            }
-            completion(true)
-        }.resume()
     }
 
     private func isCanvasSessionCookie(_ cookie: HTTPCookie) -> Bool {
@@ -210,18 +244,44 @@ private final class CanvasLoginViewController: UIViewController, WKNavigationDel
         let host = (baseURL.host ?? "").lowercased()
         let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
         if host.isEmpty { return true }
-        return host == domain || host.hasSuffix("." + domain) || domain.hasSuffix(host) || domain.contains("canvas")
+        return host == domain
+            || host.hasSuffix("." + domain)
+            || domain.hasSuffix(host)
+            || domain.contains("canvas")
+            || domain.contains("instructure")
+    }
+
+    private func isBenignNavigationError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        // -999 = request cancelled (normal during SSO redirects)
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        checkForAuthenticatedSession()
+        let host = webView.url?.host ?? ""
+        if host.localizedCaseInsensitiveContains(baseURL.host ?? "canvas") {
+            statusLabel.text = "Canvas loaded — confirming login…"
+            attemptCapture(reason: "didFinish")
+        } else {
+            statusLabel.text = "Complete NetID / Duo… you'll return to Canvas next."
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        statusLabel.text = "Still loading… If Duo prompts, complete it here."
+        guard !isBenignNavigationError(error) else { return }
+        statusLabel.text = "Page hiccup after Duo is normal — wait for Canvas, or tap I'm signed in."
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        statusLabel.text = "Still loading… If Duo prompts, complete it here."
+        guard !isBenignNavigationError(error) else { return }
+        statusLabel.text = "Page hiccup after Duo is normal — wait for Canvas, or tap I'm signed in."
     }
 }
