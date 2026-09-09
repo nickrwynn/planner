@@ -1307,11 +1307,15 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                         scale={scale}
                         highlightQuery={findOpen ? findQuery : ""}
                         onPageCount={setPageCount}
-                        onTextSelect={({ text, x, y }) => {
+                        onTextSelect={({ text, x, y, showMenu }) => {
                           setSelectedText(text);
-                          setMenu({ x, y, text, mode: "select" });
+                          if (showMenu) {
+                            setMenu({ x, y, text, mode: "select" });
+                          }
                         }}
-                        onClearSelect={() => setMenu(null)}
+                        onClearSelect={() => {
+                          setMenu(null);
+                        }}
                       />
                     ) : isPdf && pdfLoadError ? (
                       <div className="studyPdfError">Couldn’t download PDF ({pdfLoadError}).</div>

@@ -999,11 +999,15 @@ html.agentCollapsed .appShell {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
-.textLayer.isSelecting,
-.textLayer.isExtendArmed {
+.textLayer.isSelecting {
+  touch-action: none;
+  cursor: text;
+}
+
+.textLayer.hasSelection {
   cursor: text;
 }
 
@@ -1040,6 +1044,24 @@ html.agentCollapsed .appShell {
   position: absolute;
   background: rgba(255, 215, 0, 0.45);
   border-radius: 2px;
+}
+
+.pdfCaret {
+  display: none;
+  position: absolute;
+  z-index: 3;
+  width: 2px;
+  background: #0374b5;
+  border-radius: 1px;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+.pdfSelectHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--muted, #6b7280);
+  text-align: center;
 }
 
 .studyFindBar {
