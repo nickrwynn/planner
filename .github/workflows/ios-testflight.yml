@@ -74,9 +74,11 @@ jobs:
           STORYBOARD="apps/web/ios/App/App/Base.lproj/Main.storyboard"
           CONFIG="apps/web/ios/App/App/capacitor.config.json"
           PLUGIN="apps/web/ios/App/App/CanvasLoginPlugin.swift"
+          HANDWRITING="apps/web/ios/App/App/HandwritingPlugin.swift"
           BRIDGE="apps/web/ios/App/App/BridgeViewController.swift"
 
           test -f "$PLUGIN"
+          test -f "$HANDWRITING"
           test -f "$BRIDGE"
 
           # cap sync can reset the storyboard back to CAPBridgeViewController
@@ -96,7 +98,7 @@ jobs:
           cfg_path = Path("apps/web/ios/App/App/capacitor.config.json")
           cfg = json.loads(cfg_path.read_text())
           classes = cfg.get("packageClassList") or []
-          for name in ("CanvasLoginPlugin", "BrowserPlugin"):
+          for name in ("CanvasLoginPlugin", "HandwritingPlugin", "BrowserPlugin"):
               if name not in classes:
                   classes.append(name)
           cfg["packageClassList"] = classes

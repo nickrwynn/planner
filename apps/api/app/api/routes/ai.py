@@ -309,7 +309,10 @@ def ai_status(user=Depends(get_current_user)):
         configured=False,
         provider=None,
         model=None,
-        message="Set CURSOR_API_KEY for Ask, Study Lab, and handwriting recognition (Cursor Auto).",
+        message=(
+            "Set CURSOR_API_KEY for Ask and Study Lab (Cursor Auto). "
+            "Handwriting recognition runs on-device and does not need a key."
+        ),
     )
 
 
@@ -318,7 +321,10 @@ def handwriting(payload: HandwritingRequest, db: Session = Depends(get_db_from_r
     if not is_llm_configured():
         raise HTTPException(
             status_code=503,
-            detail="CURSOR_API_KEY is not set. Configure Cursor Auto for handwriting recognition.",
+            detail=(
+                "Cloud handwriting refinement is not configured (CURSOR_API_KEY). "
+                "On-device recognition still works; only math/LaTeX needs the cloud."
+            ),
         )
     start = time.perf_counter()
     try:

@@ -213,7 +213,8 @@ export default function StudyLabPage() {
         </div>
 
         <div style={{ marginTop: 12, color: "#555", fontSize: 13 }}>
-          Select resources below. Full LLM generation needs CURSOR_API_KEY on the API.
+          Select resources below. Full LLM generation needs CURSOR_API_KEY on the API. Handwriting
+          recognition is on-device and works without it.
         </div>
 
         {error ? <ErrorState message={error} onRetry={() => refresh()} /> : null}
