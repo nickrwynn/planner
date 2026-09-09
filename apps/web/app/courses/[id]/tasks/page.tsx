@@ -8,6 +8,7 @@ import {
   nextDueForRule,
   parseProblemsText,
   planDueDatesForTasks,
+  previousDueForRule,
   problemsToText,
   readDueRules,
   WEEKDAY_OPTIONS,
