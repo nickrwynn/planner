@@ -11,7 +11,7 @@ type CanvasConnectPanelProps = {
 
 export function CanvasConnectPanel({ compact }: CanvasConnectPanelProps) {
   const [canvasStatus, setCanvasStatus] = useState<CanvasStatus | null>(null);
-  const [canvasBaseUrl, setCanvasBaseUrl] = useState("");
+  const [canvasBaseUrl, setCanvasBaseUrl] = useState("https://canvas.tamu.edu");
   const [canvasToken, setCanvasToken] = useState("");
   const [sessionCookie, setSessionCookie] = useState("");
   const [qrUrl, setQrUrl] = useState("");
@@ -207,7 +207,10 @@ export function CanvasConnectPanel({ compact }: CanvasConnectPanelProps) {
             : " · not synced yet"}
         </div>
       ) : (
-        <div style={{ fontSize: 13, color: "#6b7280" }}>Not connected</div>
+        <div style={{ fontSize: 13, color: "#6b7280" }}>
+          Not connected — enter your Canvas URL, then tap <strong>Sign in with Canvas</strong>. Sync stays off until
+          that succeeds.
+        </div>
       )}
 
       <div style={{ display: "grid", gap: 8 }}>
@@ -218,21 +221,30 @@ export function CanvasConnectPanel({ compact }: CanvasConnectPanelProps) {
           style={{ padding: 8, maxWidth: 420 }}
           autoComplete="off"
         />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {nativeCanvasLogin ? (
-            <button type="button" onClick={onSignInWithCanvas} style={{ padding: "8px 12px" }} disabled={canvasBusy}>
-              {canvasBusy ? "Working…" : "Sign in with Canvas"}
-            </button>
-          ) : null}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button
+            type="button"
+            onClick={onSignInWithCanvas}
+            style={{ padding: "8px 12px", fontWeight: 600 }}
+            disabled={canvasBusy}
+          >
+            {canvasBusy ? "Working…" : "Sign in with Canvas"}
+          </button>
           <button
             type="button"
             onClick={onSyncCanvas}
             style={{ padding: "8px 12px" }}
             disabled={canvasBusy || !canvasStatus?.connected}
+            title={!canvasStatus?.connected ? "Connect with Sign in with Canvas first" : "Sync courses from Canvas"}
           >
             Sync now
           </button>
         </div>
+        {!canvasStatus?.connected ? (
+          <div style={{ fontSize: 12, color: "#6b7280" }}>
+            Typing the URL alone does nothing — you must sign in (NetID / Duo) so StudyFlows can capture the session.
+          </div>
+        ) : null}
       </div>
 
       {!compact ? (
