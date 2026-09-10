@@ -64,6 +64,9 @@ export function HandwritingCanvas({
   }
 
   function start(e: React.PointerEvent<HTMLCanvasElement>) {
+    // Pen only, as the surface advertises. A finger left free to draw here also
+    // stops being able to scroll the page, since the canvas takes the gesture.
+    if (e.pointerType === "touch") return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const p = getPoint(e);
     const next: InkElement = {
@@ -104,7 +107,13 @@ export function HandwritingCanvas({
         ref={canvasRef}
         width={600}
         height={360}
-        style={{ border: "1px solid #e5e7eb", borderRadius: 10, background: "#fff" }}
+        style={{
+          border: "1px solid var(--border-strong)",
+          borderRadius: 10,
+          background: "var(--paper)",
+          // Pencil strokes must not scroll the page.
+          touchAction: "none"
+        }}
         onPointerDown={start}
         onPointerMove={move}
         onPointerUp={end}

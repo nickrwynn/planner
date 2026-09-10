@@ -948,7 +948,10 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
   async function onRecognizeInk(imageBase64: string, mode: "text" | "math"): Promise<string> {
     try {
       const res = await recognizeHandwriting(imageBase64, mode);
-      return (res.text || "").trim();
+      // In math mode the LaTeX is the useful result; res.text is only Vision's
+      // plain reading of the symbols, which loses the layout entirely.
+      const value = mode === "math" && res.latex ? res.latex : res.text;
+      return (value || "").trim();
     } catch (e) {
       setError(toErrorMessage(e));
       return "";

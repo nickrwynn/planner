@@ -864,6 +864,78 @@ html.agentCollapsed .appShell {
   cursor: crosshair;
 }
 
+/* Pen / keyboard input mode toolbar, pinned out of the way of the content. */
+.inputModeBar {
+  position: fixed;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
+}
+
+.inputModeBar button {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.inputModeBar button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.inputModeBar button.isActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* The handwriting sheet sits above the mode bar so both stay reachable. */
+.penBridgeSheet {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+  z-index: 65;
+  width: min(720px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+}
+
+.penBridgeSheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.penBridgeHint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/* While the pencil is down, dim the caret so the ink is what reads as active. */
+.studyPaper.isWriting .studyPaperText {
+  caret-color: transparent;
+}
+
 .studyProgressStrip {
   margin-top: 8px;
   padding: 8px 10px;

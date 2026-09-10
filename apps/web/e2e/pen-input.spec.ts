@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import { planInsertion, spliceText, type InsertionSpan } from "../lib/pen-insert";
 import { cropRect, growBounds } from "../lib/ink-crop";
 
@@ -122,5 +124,77 @@ test.describe("ink crop", () => {
 
   test("an empty area yields no crop", () => {
     expect(cropRect({ minX: 5, minY: 5, maxX: 5, maxY: 5 }, 1, 1, 1, 2)).toBeNull();
+  });
+});
+
+const CSS = fs.readFileSync(path.join(__dirname, "../app/globals.css"), "utf-8");
+
+const SHEET_HARNESS = `<!doctype html>
+<html><head><meta charset="utf-8"><style>${CSS}</style></head>
+<body style="margin:0;height:2000px">
+  <div class="inputModeBar" role="toolbar">
+    <button type="button" class="isActive">Auto</button>
+    <button type="button">Pen</button>
+    <button type="button">Type</button>
+    <button type="button">Ink</button>
+  </div>
+  <div class="penBridgeSheet">
+    <div class="penBridgeSheetHeader"><strong>Write with Apple Pencil</strong><button>Done</button></div>
+    <p class="penBridgeHint">Auto mode hint</p>
+    <div class="studyInkPad"><canvas class="studyInkCanvas"></canvas></div>
+  </div>
+</body></html>`;
+
+/**
+ * The sheet and mode bar had no CSS at all, so they rendered as plain blocks at
+ * the end of the page instead of floating over it.
+ */
+test.describe("pen sheet layout", () => {
+  test("the sheet and mode bar float above the page", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.setContent(SHEET_HARNESS);
+
+    const positions = await page.evaluate(() => {
+      const bar = getComputedStyle(document.querySelector(".inputModeBar")!);
+      const sheet = getComputedStyle(document.querySelector(".penBridgeSheet")!);
+      return {
+        barPosition: bar.position,
+        sheetPosition: sheet.position,
+        barZ: Number(bar.zIndex),
+        sheetZ: Number(sheet.zIndex),
+        sheetBg: sheet.backgroundColor,
+      };
+    });
+
+    expect(positions.barPosition).toBe("fixed");
+    expect(positions.sheetPosition).toBe("fixed");
+    // The sheet has to sit above the bar or its Done button is unreachable.
+    expect(positions.sheetZ).toBeGreaterThan(positions.barZ);
+    // An opaque background: content behind must not show through the ink pad.
+    expect(positions.sheetBg).not.toBe("rgba(0, 0, 0, 0)");
+
+    // Both stay on screen even though the page is far taller than the viewport.
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    for (const selector of [".inputModeBar", ".penBridgeSheet"]) {
+      const box = await page.locator(selector).boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.y).toBeLessThan(768);
+    }
+
+    // The sheet must not overlap the mode bar it sits above.
+    const sheet = (await page.locator(".penBridgeSheet").boundingBox())!;
+    const bar = (await page.locator(".inputModeBar").boundingBox())!;
+    expect(sheet.y + sheet.height).toBeLessThanOrEqual(bar.y + 1);
+
+    await page.screenshot({ path: "test-results/pen-sheet.png" });
+  });
+
+  test("the ink canvas blocks touch scrolling", async ({ page }) => {
+    await page.setContent(SHEET_HARNESS);
+    const touchAction = await page.evaluate(
+      () => getComputedStyle(document.querySelector(".studyInkCanvas")!).touchAction
+    );
+    expect(touchAction).toBe("none");
   });
 });
