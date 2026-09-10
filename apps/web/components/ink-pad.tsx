@@ -1,12 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { HandwritingResult } from "../lib/handwriting-recognize";
 import { cropInkToDataUrl, growBounds, type InkBounds } from "../lib/ink-crop";
+
+type RecognitionSource = HandwritingResult["source"];
 
 type InkPadProps = {
   disabled?: boolean;
   penOnly?: boolean;
-  onRecognize: (imageBase64: string, mode: "text" | "math", session: number) => Promise<void>;
+  onRecognize: (
+    imageBase64: string,
+    mode: "text" | "math",
+    session: number
+  ) => Promise<RecognitionSource | null>;
+};
+
+/**
+ * Which engine read the ink. Worth showing: recognition quality differs sharply
+ * between them, so when a result is poor the first useful question is which one
+ * produced it.
+ */
+const SOURCE_LABELS: Record<RecognitionSource, string> = {
+  device: "Apple Vision, on device",
+  cloud: "Cloud model",
+  local: "Browser OCR (least accurate)",
 };
 
 /**
@@ -26,6 +44,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
   const [hasInk, setHasInk] = useState(false);
   const hasInkRef = useRef(false);
   const [busy, setBusy] = useState(false);
+  const [source, setSource] = useState<RecognitionSource | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const bounds = useRef<InkBounds | null>(null);
@@ -141,7 +160,8 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
       const dataUrl = cropInkToDataUrl(canvas, ink, dprRef.current, strokeWidth.current);
       if (!dataUrl) return;
       const base64 = dataUrl.split(",")[1] || dataUrl;
-      await onRecognize(base64, modeRef.current, session.current);
+      const used = await onRecognize(base64, modeRef.current, session.current);
+      if (used && seq === recognizeSeq.current) setSource(used);
     } finally {
       if (seq === recognizeSeq.current) setBusy(false);
     }
@@ -202,6 +222,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
       <div className="studySideMuted" style={{ fontSize: 12 }}>
         Recognition runs a moment after you lift the pencil, and refines the same
         text as you keep writing. Keep &amp; clear starts a new phrase.
+        {source ? ` Read by: ${SOURCE_LABELS[source]}.` : ""}
       </div>
     </div>
   );

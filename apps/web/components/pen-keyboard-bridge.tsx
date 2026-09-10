@@ -159,9 +159,9 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
     async (imageBase64: string, recognizeMode: "text" | "math", session: number) => {
       const res = await recognizeHandwriting(imageBase64, recognizeMode);
       const text = (recognizeMode === "math" && res.latex ? res.latex : res.text || "").trim();
-      if (!text) return;
+      if (!text) return null;
       const el = targetRef.current;
-      if (!el || !document.contains(el)) return;
+      if (!el || !document.contains(el)) return res.source;
 
       // Each pass re-reads all the ink on the pad, so a pass belonging to the
       // same ink session overwrites what the last one wrote. Appending instead
@@ -175,6 +175,7 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
       const { value, span } = spliceText(el.value, plan, addition);
       writeValue(el, value, span.end);
       spanRef.current = { session, ...span };
+      return res.source;
     },
     []
   );
