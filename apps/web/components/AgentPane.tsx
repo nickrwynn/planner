@@ -179,7 +179,7 @@ export function AgentPane({ onCollapse }: { onCollapse?: () => void }) {
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
         <div style={{ fontWeight: 700 }}>Agent</div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 12, color: "#555" }}>Ask</div>
+          <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>Ask</div>
           <button
             type="button"
             onClick={newChat}
@@ -257,17 +257,17 @@ export function AgentPane({ onCollapse }: { onCollapse?: () => void }) {
                 onChange={(e) => setSelected((prev) => ({ ...prev, [r.id]: e.target.checked }))}
               />
               <span style={{ fontWeight: 600 }}>{r.title}</span>
-              <span style={{ color: "#555" }}>index={r.index_status}</span>
+              <span style={{ color: "var(--fg-muted)" }}>index={r.index_status}</span>
             </label>
           ))}
-          {resources.length === 0 && <div style={{ color: "#555", fontSize: 12 }}>No resources.</div>}
+          {resources.length === 0 && <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>No resources.</div>}
         </div>
       </div>
 
       <div style={{ overflow: "auto", marginTop: 12, paddingRight: 6 }}>
-        {!historyLoaded && <div style={{ color: "#555", fontSize: 13 }}>Loading history…</div>}
+        {!historyLoaded && <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>Loading history…</div>}
         {historyLoaded && items.length === 0 && (
-          <div style={{ color: "#555", fontSize: 14 }}>
+          <div style={{ color: "var(--fg-muted)", fontSize: 14 }}>
             Ask a question about your uploaded resources. Answers will cite chunks when available.
           </div>
         )}
@@ -276,25 +276,25 @@ export function AgentPane({ onCollapse }: { onCollapse?: () => void }) {
             <div
               key={it.id ?? `${it.role}-${idx}`}
               style={{
-                border: "1px solid #e5e7eb",
+                  border: "1px solid var(--border)",
                 borderRadius: 10,
                 padding: 10,
-                background: it.role === "user" ? "#f9fafb" : "#fff"
+                  background: it.role === "user" ? "var(--bg-inset)" : "var(--bg-elevated)"
               }}
             >
-              <div style={{ fontSize: 12, color: "#555", marginBottom: 6 }}>{it.role}</div>
+              <div style={{ fontSize: 12, color: "var(--fg-muted)", marginBottom: 6 }}>{it.role}</div>
               <div style={{ whiteSpace: "pre-wrap", fontSize: 14 }}>{it.content}</div>
               {it.citations && it.citations.length > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12 }}>
                   <div style={{ fontWeight: 600, marginBottom: 4 }}>Citations</div>
                   <div style={{ display: "grid", gap: 6 }}>
                     {it.citations.map((c) => (
-                      <div key={c.chunk_id} style={{ color: "#374151" }}>
+                      <div key={c.chunk_id} style={{ color: "var(--fg)" }}>
                         <Link href={`/resources/${c.resource_id}`} style={{ textDecoration: "none" }}>
                           resource {c.resource_id}
                         </Link>
                         {c.page_number ? ` • page ${c.page_number}` : ""} • chunk {c.chunk_index}
-                        <div style={{ color: "#555", marginTop: 2, whiteSpace: "pre-wrap" }}>
+                        <div style={{ color: "var(--fg-muted)", marginTop: 2, whiteSpace: "pre-wrap" }}>
                           {c.snippet}
                         </div>
                       </div>

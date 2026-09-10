@@ -68,10 +68,21 @@ test("flow track shows done, active and pending states", async ({ page }) => {
     () => getComputedStyle(document.querySelector(".flowStep.is-pending button")!).backgroundColor
   );
 
-  // Green active, shaded done, white pending — all visibly different.
-  expect(activeBg).toBe("rgb(220, 252, 231)");
-  expect(doneBg).toBe("rgb(229, 231, 235)");
-  expect(pendingBg).toBe("rgb(255, 255, 255)");
+  // The three states must be visibly different from each other.
+  expect(new Set([activeBg, doneBg, pendingBg]).size).toBe(3);
+
+  const rgb = (s: string) => (s.match(/\d+/g) || []).map(Number);
+  // Active reads green: more green than red or blue.
+  const [ar, ag, ab] = rgb(activeBg);
+  expect(ag).toBeGreaterThan(ar);
+  expect(ag).toBeGreaterThan(ab);
+
+  // Done is shaded — darker than the untouched pending chip.
+  const lum = (s: string) => {
+    const [r, g, b] = rgb(s);
+    return 0.299 * r + 0.587 * g + 0.114 * b;
+  };
+  expect(lum(doneBg)).toBeLessThan(lum(pendingBg));
 
   // The track lays out on one horizontal line.
   const tops = await page.evaluate(() =>

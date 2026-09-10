@@ -78,6 +78,24 @@ function difficultyOf(task: Task): Difficulty {
   return "yellow";
 }
 
+/**
+ * The rating only if the user actually set one. The month grid uses this so
+ * that imported coursework stays neutral rather than inheriting the "yellow"
+ * default and washing the whole calendar in one colour.
+ */
+function ratedDifficulty(task: Task): Difficulty | null {
+  const d = logisticsOf(task).difficulty;
+  return d === "red" || d === "yellow" || d === "green" ? d : null;
+}
+
+function calendarEventClass(task: Task): string {
+  const rating = ratedDifficulty(task);
+  const done = task.status === "done";
+  return ["calendarEvent", rating ? `is-${rating}` : "", done ? "is-done" : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function formatTime(iso: string | null | undefined) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -86,9 +104,24 @@ function formatTime(iso: string | null | undefined) {
 }
 
 const DIFFICULTY_META: Record<Difficulty, { label: string; bg: string; border: string; text: string }> = {
-  red: { label: "Red — hard / high friction", bg: "#fef2f2", border: "#fecaca", text: "#991b1b" },
-  yellow: { label: "Yellow — medium", bg: "#fffbeb", border: "#fde68a", text: "#92400e" },
-  green: { label: "Green — easy wins", bg: "#f0fdf4", border: "#bbf7d0", text: "#166534" },
+  red: {
+    label: "Red — hard / high friction",
+    bg: "var(--danger-soft)",
+    border: "var(--danger)",
+    text: "var(--danger-fg)",
+  },
+  yellow: {
+    label: "Yellow — medium",
+    bg: "var(--warn-soft)",
+    border: "var(--warn)",
+    text: "var(--warn-fg)",
+  },
+  green: {
+    label: "Green — easy wins",
+    bg: "var(--success-soft)",
+    border: "var(--success)",
+    text: "var(--success-fg)",
+  },
 };
 
 export default function CalendarPage() {
@@ -699,7 +732,7 @@ export default function CalendarPage() {
 
     if (isEditing) {
       return (
-        <div style={{ display: "grid", gap: 8, padding: "8px 0", borderBottom: "1px solid #f3f4f6" }}>
+        <div style={{ display: "grid", gap: 8, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
           <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} style={{ padding: 8 }} aria-label="Edit title" />
           {kind === "todo" ? (
             <select
@@ -766,7 +799,7 @@ export default function CalendarPage() {
           gap: 8,
           alignItems: "start",
           padding: "6px 0",
-          borderBottom: "1px solid #f3f4f6",
+          borderBottom: "1px solid var(--border)",
         }}
       >
         <input
@@ -785,7 +818,7 @@ export default function CalendarPage() {
               whiteSpace: kind === "note" ? "pre-wrap" : undefined,
             }}
           >
-            {timeLabel ? <span style={{ color: "#1e3a5f", marginRight: 8 }}>{timeLabel}</span> : null}
+            {timeLabel ? <span style={{ color: "var(--cat-timeline)", marginRight: 8 }}>{timeLabel}</span> : null}
             {(() => {
               const href = studyflowHrefFromTask(task);
               if (href) {
@@ -798,13 +831,13 @@ export default function CalendarPage() {
               return task.title;
             })()}
           </div>
-          <div style={{ fontSize: 12, color: "#6b7280" }}>
+          <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
             {itemOwnerLabel(task)}
             {extra ? ` · ${extra}` : ""}
             {!showTime && kind !== "event" && kind !== "note" && task.due_at ? ` · ${formatTime(task.due_at)}` : ""}
           </div>
           {problemsToText((task.logistics_json || {}).problems) ? (
-            <div style={{ fontSize: 12, color: "#374151", marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: "var(--fg)", marginTop: 2 }}>
               Problems: {problemsToText((task.logistics_json || {}).problems)}
             </div>
           ) : null}
@@ -812,7 +845,7 @@ export default function CalendarPage() {
             {isStudyflowTask(task) ? (
               <Link
                 href={studyflowHrefFromTask(task) || "#"}
-                style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #d1d5db", textDecoration: "none", color: "inherit" }}
+                style={{ padding: "4px 8px", fontSize: 12, border: "1px solid var(--border-strong)", textDecoration: "none", color: "inherit" }}
               >
                 Open flow
               </Link>
@@ -848,15 +881,15 @@ export default function CalendarPage() {
             fontWeight: 700,
             fontSize: 13,
             letterSpacing: 0.02,
-            color: color || "#111827",
-            borderBottom: `2px solid ${color || "#e5e7eb"}`,
+            color: color || "var(--fg)",
+            borderBottom: `2px solid ${color || "var(--border)"}`,
             paddingBottom: 4,
           }}
         >
           {sectionTitle}
-          {count > 0 ? <span style={{ fontWeight: 500, color: "#6b7280", marginLeft: 8 }}>{count}</span> : null}
+          {count > 0 ? <span style={{ fontWeight: 500, color: "var(--fg-muted)", marginLeft: 8 }}>{count}</span> : null}
         </div>
-        {count === 0 ? <div style={{ fontSize: 13, color: "#9ca3af" }}>Nothing here yet.</div> : children}
+        {count === 0 ? <div style={{ fontSize: 13, color: "var(--fg-subtle)" }}>Nothing here yet.</div> : children}
       </div>
     );
   }
@@ -903,7 +936,7 @@ export default function CalendarPage() {
         <>
           <div className="calendarGrid" aria-label="Month calendar">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-              <div key={d} style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", padding: "0 4px" }}>
+              <div className="calendarWeekday" key={d}>
                 {d}
               </div>
             ))}
@@ -916,13 +949,9 @@ export default function CalendarPage() {
                 <button
                   key={key + String(inMonth)}
                   type="button"
-                  className={`calendarCell${inMonth ? "" : " calendarCellMuted"}${isSelected ? " calendarCellSelected" : ""}`}
-                  style={{
-                    textAlign: "left",
-                    cursor: "pointer",
-                    outline: isToday ? "2px solid #111827" : undefined,
-                    borderColor: isSelected ? "#1d4ed8" : undefined,
-                  }}
+                  className={`calendarCell${inMonth ? "" : " calendarCellMuted"}${
+                    isSelected ? " calendarCellSelected" : ""
+                  }${isToday ? " calendarCellToday" : ""}`}
                   onClick={() => openDay(date)}
                 >
                   <div className="calendarDayNum">{date.getDate()}</div>
@@ -932,7 +961,7 @@ export default function CalendarPage() {
                       return (
                         <span
                           key={t.id}
-                          className="calendarEvent"
+                          className={calendarEventClass(t)}
                           title={`${itemOwnerLabel(t)} · Open StudyFlow`}
                           role="link"
                           tabIndex={0}
@@ -955,13 +984,13 @@ export default function CalendarPage() {
                       );
                     }
                     return (
-                      <span key={t.id} className="calendarEvent" title={itemOwnerLabel(t)}>
+                      <span key={t.id} className={calendarEventClass(t)} title={itemOwnerLabel(t)}>
                         {t.title}
                       </span>
                     );
                   })}
                   {dayTasks.length > 3 ? (
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>+{dayTasks.length - 3} more</div>
+                    <div className="calendarMore">+{dayTasks.length - 3} more</div>
                   ) : null}
                 </button>
               );
@@ -980,7 +1009,7 @@ export default function CalendarPage() {
                       year: "numeric",
                     })}
                   </div>
-                  <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)", marginTop: 2 }}>
                     Daily planner · grows with what you add
                     {dayPlan.all.length ? ` · ${dayPlan.all.filter((t) => plannerKind(t) !== "focus").length} items` : ""}
                   </div>
@@ -991,7 +1020,7 @@ export default function CalendarPage() {
               </div>
 
               <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "#1e3a5f" }}>Top focus</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "var(--cat-timeline)" }}>Top focus</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={topFocusDraft}
@@ -1015,7 +1044,7 @@ export default function CalendarPage() {
               >
                 <div style={{ display: "grid", gap: 16 }}>
                   {dayPlan.events.length > 0 ? (
-                    <Section title="Timeline" color="#1e3a5f" count={dayPlan.events.length}>
+                    <Section title="Timeline" color="var(--cat-timeline)" count={dayPlan.events.length}>
                       {dayPlan.events.map((t) => (
                         <PlannerItem key={t.id} task={t} showTime />
                       ))}
@@ -1025,7 +1054,7 @@ export default function CalendarPage() {
                   {(openTodoCount > 0 ||
                     dayPlan.todos.red.length + dayPlan.todos.yellow.length + dayPlan.todos.green.length > 0) && (
                     <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: "#111827" }}>Daily to-do</div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "var(--fg)" }}>Daily to-do</div>
                       {(["red", "yellow", "green"] as Difficulty[]).map((band) => {
                         const items = dayPlan.todos[band];
                         if (items.length === 0) return null;
@@ -1052,7 +1081,7 @@ export default function CalendarPage() {
                   )}
 
                   {dayPlan.homework.length > 0 ? (
-                    <Section title="Homework" color="#6d28d9" count={dayPlan.homework.length}>
+                    <Section title="Homework" color="var(--cat-homework)" count={dayPlan.homework.length}>
                       {dayPlan.homework.map((t) => (
                         <PlannerItem key={t.id} task={t} extra={t.task_type || undefined} />
                       ))}
@@ -1060,7 +1089,7 @@ export default function CalendarPage() {
                   ) : null}
 
                   {dayPlan.reading.length > 0 ? (
-                    <Section title="Daily reading" color="#0f766e" count={dayPlan.reading.length}>
+                    <Section title="Daily reading" color="var(--cat-reading)" count={dayPlan.reading.length}>
                       {dayPlan.reading.map((t) => (
                         <PlannerItem
                           key={t.id}
@@ -1072,7 +1101,7 @@ export default function CalendarPage() {
                   ) : null}
 
                   {dayPlan.notes.length > 0 ? (
-                    <Section title="Notes" color="#374151" count={dayPlan.notes.length}>
+                    <Section title="Notes" color="var(--fg-muted)" count={dayPlan.notes.length}>
                       {dayPlan.notes.map((t) => (
                         <PlannerItem key={t.id} task={t} />
                       ))}
@@ -1085,7 +1114,7 @@ export default function CalendarPage() {
                 </div>
               </div>
 
-              <form onSubmit={onCreate} style={{ display: "grid", gap: 8, borderTop: "1px solid #e5e7eb", paddingTop: 12 }}>
+              <form onSubmit={onCreate} style={{ display: "grid", gap: 8, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 <div style={{ fontWeight: 600 }}>Add to this day</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <select
@@ -1170,7 +1199,7 @@ export default function CalendarPage() {
 
                 {labelId ? (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: "#6b7280" }}>
+                    <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>
                       Using type: {labels.find((l) => l.id === labelId)?.name || "Custom"}
                     </span>
                     <button type="button" disabled={busy} onClick={deleteSelectedLabel} style={{ padding: "4px 8px", fontSize: 12 }}>
@@ -1202,7 +1231,7 @@ export default function CalendarPage() {
                       <option value="__custom__">Custom (type below)</option>
                     </select>
                     {!catalogLoading && catalogOptions.length === 0 ? (
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
                         {addKind === "homework"
                           ? "No open assignments found for this course — type a custom title below, or sync Canvas."
                           : "No section notebooks / readings found — type a custom chapter below, or sync Canvas."}
@@ -1212,7 +1241,7 @@ export default function CalendarPage() {
                 ) : null}
 
                 {(addKind === "homework" || addKind === "reading") && !courseId ? (
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>
                     Pick a course to choose from its assignments or chapters. Custom types use a free-text title.
                   </div>
                 ) : null}
@@ -1280,7 +1309,7 @@ export default function CalendarPage() {
                     ) : (
                       <span style={{ fontWeight: 600 }}>{t.title}</span>
                     )}
-                    <span style={{ color: "#555", marginLeft: 8, fontSize: 12 }}>{itemOwnerLabel(t)}</span>
+                    <span style={{ color: "var(--fg-muted)", marginLeft: 8, fontSize: 12 }}>{itemOwnerLabel(t)}</span>
                   </li>
                 ))}
               </ul>

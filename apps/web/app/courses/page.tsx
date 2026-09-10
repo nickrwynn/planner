@@ -97,7 +97,7 @@ export default function CoursesPage() {
 
       <div className="card" style={{ display: "grid", gap: 8 }}>
         <div style={{ fontWeight: 600 }}>Canvas LMS</div>
-        <div style={{ fontSize: 13, color: "#555" }}>
+        <div style={{ fontSize: 13, color: "var(--fg-muted)" }}>
           Sign in, sync courses, and import assignments from the{" "}
           <Link href="/" className="mutedLink">
             Dashboard → Canvas
@@ -110,7 +110,7 @@ export default function CoursesPage() {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
           <div>
             <div style={{ fontWeight: 700 }}>Add a course manually</div>
-            <div style={{ color: "#555", fontSize: 13, marginTop: 4 }}>
+            <div style={{ color: "var(--fg-muted)", fontSize: 13, marginTop: 4 }}>
               Use this for any class your school LMS doesn’t support here yet. Upload PDFs on the course Resources
               page.
             </div>
@@ -176,16 +176,16 @@ export default function CoursesPage() {
                         {c.name}
                       </Link>
                       {c.source_type === "canvas" ? (
-                        <span style={{ fontSize: 11, color: "#1d4ed8", border: "1px solid #93c5fd", padding: "1px 6px" }}>
+                        <span style={{ fontSize: 11, color: "var(--accent)", border: "1px solid var(--accent)", padding: "1px 6px" }}>
                           Canvas
                         </span>
                       ) : (
-                        <span style={{ fontSize: 11, color: "#374151", border: "1px solid #d1d5db", padding: "1px 6px" }}>
+                        <span style={{ fontSize: 11, color: "var(--fg-muted)", border: "1px solid var(--border-strong)", padding: "1px 6px" }}>
                           Manual
                         </span>
                       )}
                     </div>
-                    <div style={{ color: "#555", fontSize: 13 }}>
+                    <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
                       {c.code || "No code"} · {c.term || "No term"}
                     </div>
                   </div>

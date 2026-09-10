@@ -214,19 +214,19 @@ export default function Home() {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
             <div className="card">
-              <div style={{ color: "#555", fontSize: 13 }}>System</div>
+              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>System</div>
               <div style={{ fontWeight: 700, fontSize: 20 }}>{healthy ? "Healthy" : "Check stack"}</div>
             </div>
             <Link href="/courses" className="card" style={{ textDecoration: "none", color: "inherit" }}>
-              <div style={{ color: "#555", fontSize: 13 }}>Courses</div>
+              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>Courses</div>
               <div style={{ fontWeight: 700, fontSize: 20 }}>{courses.length}</div>
             </Link>
             <Link href="/calendar" className="card" style={{ textDecoration: "none", color: "inherit" }}>
-              <div style={{ color: "#555", fontSize: 13 }}>Open tasks</div>
+              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>Open tasks</div>
               <div style={{ fontWeight: 700, fontSize: 20 }}>{openTasks.length}</div>
             </Link>
             <div className="card">
-              <div style={{ color: "#555", fontSize: 13 }}>Resources</div>
+              <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>Resources</div>
               <div style={{ fontWeight: 700, fontSize: 20 }}>{resources.length}</div>
             </div>
           </div>
@@ -236,12 +236,12 @@ export default function Home() {
             {planner.task ? (
               <div style={{ display: "grid", gap: 6 }}>
                 <div style={{ fontWeight: 700 }}>{planner.task.title}</div>
-                <div style={{ color: "#555", fontSize: 13 }}>
+                <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
                   {courseName(planner.task.course_id)}
                   {planner.task.due_at ? ` · due ${new Date(planner.task.due_at).toLocaleString()}` : ""}
                 </div>
                 {planner.reasons.length ? (
-                  <div style={{ color: "#6b7280", fontSize: 12 }}>{planner.reasons.join(" · ")}</div>
+                  <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>{planner.reasons.join(" · ")}</div>
                 ) : null}
                 <Link href={`/courses/${planner.task.course_id}/tasks`} className="mutedLink">
                   Open in course tasks →
@@ -271,7 +271,7 @@ export default function Home() {
                     >
                       {t.title}
                     </Link>
-                    <div style={{ color: "#555", fontSize: 12 }}>
+                    <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
                       {courseName(t.course_id)}
                       {t.due_at ? ` · ${new Date(t.due_at).toLocaleString()}` : ""}
                     </div>
@@ -282,7 +282,7 @@ export default function Home() {
           </div>
 
           {failedIndex.length > 0 ? (
-            <div className="card" style={{ borderColor: "#fecaca", background: "#fff7f7" }}>
+            <div className="card" style={{ borderColor: "var(--danger)", background: "var(--danger-soft)" }}>
               <div style={{ fontWeight: 600, marginBottom: 8 }}>Indexing issues ({failedIndex.length})</div>
               <ul style={{ margin: 0, paddingLeft: 18 }}>
                 {failedIndex.slice(0, 6).map((r) => (
@@ -306,7 +306,7 @@ export default function Home() {
                 Plan your week
               </Link>
             </div>
-            <div style={{ color: "#6b7280", fontSize: 12 }}>
+            <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
               Canvas sync is configured above. Ask lives in the right pane.
             </div>
           </div>

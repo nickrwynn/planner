@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
-    <div data-testid="loading-state" style={{ color: "#555" }}>
+      <div data-testid="loading-state" style={{ color: "var(--fg-muted)" }}>
       {label}
     </div>
   );
@@ -26,10 +26,17 @@ export function ErrorState({
   return (
     <div
       data-testid="error-state"
-      style={{ display: "grid", gap: 8, border: "1px solid #fecaca", borderRadius: 8, padding: 10, background: "#fff7f7" }}
+      style={{
+        display: "grid",
+        gap: 8,
+        border: "1px solid var(--danger)",
+        borderRadius: "var(--radius)",
+        padding: 10,
+        background: "var(--danger-soft)",
+      }}
     >
-      <div style={{ color: "#b91c1c", fontWeight: 600 }}>{title}</div>
-      <div style={{ color: "#7f1d1d", whiteSpace: "pre-wrap" }}>{message}</div>
+      <div style={{ color: "var(--danger)", fontWeight: 600 }}>{title}</div>
+      <div style={{ color: "var(--danger-fg)", whiteSpace: "pre-wrap" }}>{message}</div>
       {onRetry ? (
         <button
           type="button"
@@ -46,7 +53,7 @@ export function ErrorState({
 
 export function EmptyState({ message, action }: { message: string; action?: ReactNode }) {
   return (
-    <div data-testid="empty-state" style={{ display: "grid", gap: 8, color: "#555" }}>
+    <div data-testid="empty-state" style={{ display: "grid", gap: 8, color: "var(--fg-muted)" }}>
       <div>{message}</div>
       {action}
     </div>

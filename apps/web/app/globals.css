@@ -1,68 +1,203 @@
+/*
+ * Theme tokens.
+ *
+ * Every colour in the app should come from one of these. Hardcoding a hex in a
+ * component is what made dark mode look broken: the chrome went dark while the
+ * cards, chips and text stayed on light-mode values.
+ *
+ * Surfaces are layered: --bg (page) sits under --bg-elevated (cards) which sits
+ * under --bg-inset (inputs and wells).
+ */
+:root,
+html[data-theme="default"] {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  /* Surfaces */
+  --bg: #f7f7f5;
+  --bg-elevated: #ffffff;
+  --bg-inset: #f1f2f4;
+  --sidebar: #ffffff;
+  --hover: #eceef1;
+  --selected: #e3ebf8;
+
+  /* Text */
+  --fg: #16181d;
+  --fg-muted: #5b626e;
+  --fg-subtle: #8a919e;
+
+  /* Lines */
+  --border: #e2e4e9;
+  --border-strong: #cbd0d8;
+  --ring: #1d4ed8;
+
+  /* Accent */
+  --accent: #1d4ed8;
+  --accent-hover: #1a45bd;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef3fd;
+
+  /* Status, and the red/yellow/green effort scale */
+  --danger: #c2321f;
+  --danger-soft: #fdecea;
+  --danger-fg: #7f1d1d;
+  --warn: #a86800;
+  --warn-soft: #fdf6e3;
+  --warn-fg: #713f12;
+  --success: #157f3d;
+  --success-soft: #e8f6ec;
+  --success-fg: #14532d;
+
+  --shadow: 0 1px 2px rgba(16, 18, 22, 0.06), 0 1px 3px rgba(16, 18, 22, 0.04);
+
+  /* Planner section accents (timeline, homework, reading). */
+  --cat-timeline: #1e3a5f;
+  --cat-homework: #6d28d9;
+  --cat-reading: #0f766e;
+
+  /* A document surface stays light in every theme, the way a PDF does. */
+  --paper: #ffffff;
+  --paper-fg: #16181d;
+  --paper-rule: #cfe0f5;
+
+  /* Kept so older rules that still reference them keep working. */
+  --panel: var(--bg-elevated);
+  --muted: var(--fg-muted);
+  color-scheme: light;
+}
+
 html,
 body {
   padding: 0;
   margin: 0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
-    "Apple Color Emoji", "Segoe UI Emoji";
-  background: var(--bg, #f7f7f5);
-  color: var(--fg, #111);
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--fg);
   min-height: 100%;
 }
 
-:root,
-html[data-theme="default"] {
-  --bg: #f7f7f5;
-  --fg: #111;
-  --panel: #fff;
-  --border: #e5e7eb;
-  --muted: #555;
-  --accent: #1d4ed8;
-  --accent-soft: #eff6ff;
+body {
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
 }
 
 html[data-theme="warm"] {
   --bg: #faf6f1;
+  --bg-elevated: #fffdf9;
+  --bg-inset: #f3ece2;
+  --sidebar: #fffdf9;
+  --hover: #f0e8dc;
+  --selected: #f6e6d2;
   --fg: #1c1917;
-  --panel: #fffdf9;
+  --fg-muted: #78716c;
+  --fg-subtle: #a8a29e;
   --border: #e7e0d5;
-  --muted: #78716c;
+  --border-strong: #d3c9b8;
+  --ring: #b45309;
   --accent: #b45309;
+  --accent-hover: #96450a;
   --accent-soft: #fff7ed;
 }
 
 html[data-theme="focus"] {
   --bg: #f4f7fb;
+  --bg-elevated: #ffffff;
+  --bg-inset: #eaf0f7;
+  --sidebar: #ffffff;
+  --hover: #e6edf6;
+  --selected: #d8ece9;
   --fg: #0f172a;
-  --panel: #ffffff;
+  --fg-muted: #64748b;
+  --fg-subtle: #94a3b8;
   --border: #dbe3ee;
-  --muted: #64748b;
+  --border-strong: #c2cedd;
+  --ring: #0f766e;
   --accent: #0f766e;
+  --accent-hover: #0c5f59;
   --accent-soft: #f0fdfa;
 }
 
 html[data-theme="high-contrast"] {
   --bg: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-inset: #ffffff;
+  --sidebar: #ffffff;
+  --hover: #ffff00;
+  --selected: #ffff00;
   --fg: #000000;
-  --panel: #ffffff;
+  --fg-muted: #111111;
+  --fg-subtle: #111111;
   --border: #000000;
-  --muted: #111111;
+  --border-strong: #000000;
+  --ring: #0000ee;
   --accent: #0000ee;
+  --accent-hover: #0000bb;
   --accent-soft: #ffff00;
+  --danger: #b00000;
+  --danger-soft: #ffffff;
+  --danger-fg: #b00000;
+  --warn: #6b4b00;
+  --warn-soft: #ffffff;
+  --warn-fg: #6b4b00;
+  --success: #006400;
+  --success-soft: #ffffff;
+  --success-fg: #006400;
+  --shadow: none;
 }
 
+/* VS Code "Dark Modern" colorway. */
 html[data-theme="dark"] {
-  /* VS Code Dark Modern / Dark+ colorway */
-  --bg: #1e1e1e;
-  --fg: #d4d4d4;
-  --panel: #252526;
+  --bg: #1f1f1f;
+  --bg-elevated: #252526;
+  --bg-inset: #313131;
   --sidebar: #181818;
-  --border: #3c3c3c;
-  --muted: #9d9d9d;
-  --accent: #569cd6;
-  --accent-soft: #2a2d2e;
+  --hover: #2a2d2e;
+  --selected: #04395e;
+
+  --fg: #cccccc;
+  --fg-muted: #9d9d9d;
+  --fg-subtle: #7c7c7c;
+
+  --border: #2b2b2b;
+  --border-strong: #3c3c3c;
+  --ring: #0078d4;
+
+  --accent: #0078d4;
+  --accent-hover: #026ec1;
+  --accent-fg: #ffffff;
+  --accent-soft: #04395e;
+
   --danger: #f14c4c;
-  --success: #89d185;
+  --danger-soft: #3d1f1f;
+  --danger-fg: #f4a0a0;
   --warn: #cca700;
+  --warn-soft: #3a3110;
+  --warn-fg: #e3cd76;
+  --success: #89d185;
+  --success-soft: #1b3320;
+  --success-fg: #a2dc9e;
+
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+
+  /* Brightened so they stay readable on a dark surface. */
+  --cat-timeline: #6cb6ff;
+  --cat-homework: #c9a6ff;
+  --cat-reading: #4ec9b0;
+
   --syntax-keyword: #c586c0;
   --syntax-string: #ce9178;
   --syntax-func: #dcdcaa;
@@ -131,7 +266,7 @@ html.agentCollapsed .appShell {
   min-height: 40vh;
   display: grid;
   place-items: center;
-  color: var(--muted, #64748b);
+  color: var(--fg-muted);
   font-size: 14px;
 }
 
@@ -164,7 +299,7 @@ html.agentCollapsed .appShell {
   margin: 0;
   font-size: 14px;
   line-height: 1.4;
-  color: var(--muted, #64748b);
+  color: var(--fg-muted);
 }
 
 .authTabs {
@@ -224,7 +359,7 @@ html.agentCollapsed .appShell {
 }
 
 .authError {
-  color: #b91c1c;
+  color: var(--danger);
   font-size: 13px;
 }
 
@@ -232,7 +367,7 @@ html.agentCollapsed .appShell {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--muted, #64748b);
+  color: var(--fg-muted);
 }
 
 .authSectionTitle {
@@ -243,7 +378,7 @@ html.agentCollapsed .appShell {
 
 .authDivider {
   border: none;
-  border-top: 1px solid var(--border, #e5e7eb);
+  border-top: 1px solid var(--border);
   margin: 4px 0;
 }
 
@@ -298,7 +433,7 @@ html.agentCollapsed .appShell {
   display: grid;
   gap: 8px;
   padding-top: 4px;
-  border-top: 1px solid var(--border, #e5e7eb);
+  border-top: 1px solid var(--border);
 }
 
 .sidebarStudyFlowsHead {
@@ -306,14 +441,14 @@ html.agentCollapsed .appShell {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .sidebarStudyFlowsEmpty {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .sidebarStudyFlowsList {
@@ -331,23 +466,23 @@ html.agentCollapsed .appShell {
   border-radius: 8px;
   text-decoration: none;
   color: inherit;
-  background: var(--accent-soft, #f3f4f6);
+  background: var(--accent-soft, var(--bg-inset));
   border: 1px solid transparent;
 }
 
 .sidebarStudyFlowLink:hover {
-  border-color: var(--border, #d1d5db);
+  border-color: var(--border, var(--border-strong));
 }
 
 .sidebarStudyFlowLink.isActive {
-  border-color: var(--accent, #1d4ed8);
-  background: var(--accent-soft, #eff6ff);
+  border-color: var(--accent, var(--accent));
+  background: var(--accent-soft, var(--accent-soft));
 }
 
 .sidebarStudyFlowCourse {
   font-size: 11px;
   font-weight: 700;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .sidebarStudyFlowLabel {
@@ -362,7 +497,7 @@ html.agentCollapsed .appShell {
 
 .sidebarStudyFlowDetail {
   font-size: 11px;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .mainPane {
@@ -394,23 +529,23 @@ html.agentCollapsed .appShell {
   display: block;
   padding: 10px 12px;
   border-radius: 8px;
-  color: #111;
+  color: var(--fg);
   text-decoration: none;
   font-weight: 500;
 }
 
 .navLink:hover {
-  background: #f3f4f6;
+  background: var(--hover);
 }
 
 .navLinkActive {
-  background: #111827;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 .navLinkActive:hover {
-  background: #111827;
-  color: #fff;
+  background: var(--accent-hover);
+  color: var(--accent-fg);
 }
 
 .courseSubnavWrap {
@@ -443,17 +578,17 @@ html.agentCollapsed .appShell {
 }
 
 .mutedLink {
-  color: #6b7280;
+  color: var(--fg-muted);
   text-decoration: none;
   font-size: 13px;
 }
 
 .mutedLink:hover {
-  color: #111;
+  color: var(--fg);
 }
 
 .pageIntro {
-  color: #555;
+  color: var(--fg-muted);
   font-size: 14px;
   margin: 0;
 }
@@ -463,7 +598,7 @@ html.agentCollapsed .appShell {
   gap: 16px;
   flex-wrap: wrap;
   font-size: 13px;
-  color: #555;
+  color: var(--fg-muted);
 }
 
 .calendarGrid {
@@ -472,20 +607,44 @@ html.agentCollapsed .appShell {
   gap: 8px;
 }
 
+.calendarWeekday {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+  padding: 0 4px;
+}
+
 .calendarCell {
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
   min-height: 110px;
   padding: 8px;
   display: grid;
   align-content: start;
   gap: 6px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.calendarCell:hover {
+  border-color: var(--border-strong);
+}
+
+.calendarMore {
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 .calendarCellSelected {
-  border-color: #1d4ed8;
-  box-shadow: inset 0 0 0 1px #93c5fd;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.calendarCellToday {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .calendarCellMuted {
@@ -495,7 +654,7 @@ html.agentCollapsed .appShell {
 .calendarDayNum {
   font-size: 12px;
   font-weight: 600;
-  color: #6b7280;
+  color: var(--fg-muted);
 }
 
 .calendarEvent {
@@ -503,14 +662,54 @@ html.agentCollapsed .appShell {
   font-size: 12px;
   line-height: 1.3;
   padding: 4px 6px;
-  border-radius: 6px;
-  background: #eef2ff;
-  color: #1e3a8a;
+  border-radius: var(--radius);
+  border-left: 3px solid transparent;
+  background: var(--accent-soft);
+  color: var(--fg);
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .calendarEvent:hover {
-  background: #dbeafe;
+  background: var(--selected);
+}
+
+/*
+ * Effort colour, carried over from the daily planner's red/yellow/green
+ * bands. Only tasks with an explicit rating get a colour, so imported
+ * coursework stays neutral instead of defaulting the whole month to yellow.
+ */
+.calendarEvent.is-red {
+  background: var(--danger-soft);
+  border-left-color: var(--danger);
+  color: var(--danger-fg);
+}
+
+.calendarEvent.is-yellow {
+  background: var(--warn-soft);
+  border-left-color: var(--warn);
+  color: var(--warn-fg);
+}
+
+.calendarEvent.is-green {
+  background: var(--success-soft);
+  border-left-color: var(--success);
+  color: var(--success-fg);
+}
+
+/* Completed work recedes but stays legible. */
+.calendarEvent.is-done {
+  background: transparent;
+  border-left-color: var(--border-strong);
+  color: var(--fg-subtle);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.calendarEvent.is-done:hover {
+  background: var(--hover);
 }
 
 @media (max-width: 1200px) {
@@ -534,7 +733,7 @@ html.agentCollapsed .appShell {
 
   .sidebar {
     border-right: 0;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
     z-index: 20;
@@ -561,10 +760,10 @@ html.agentCollapsed .appShell {
 }
 
 .card {
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel, #fff);
-  color: var(--fg, #111);
+  background: var(--bg-elevated);
+  color: var(--fg);
   padding: 16px;
 }
 
@@ -587,8 +786,8 @@ html.agentCollapsed .appShell {
 
 .studyStepTab {
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -601,26 +800,26 @@ html.agentCollapsed .appShell {
 }
 
 .studyAgentBanner {
-  border: 1px solid #d1d5db;
-  background: #f8fafc;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
   padding: 10px 12px;
   font-size: 13px;
   margin-bottom: 12px;
 }
 
 .studyAgentBanner.isReady {
-  border-color: #86efac;
-  background: #f0fdf4;
+  border-color: var(--success);
+  background: var(--success-soft);
 }
 
 .studyAgentBanner.isMissing {
-  border-color: #fcd34d;
-  background: #fffbeb;
+  border-color: var(--warn);
+  background: var(--warn-soft);
 }
 
 .studySavedNote {
   font-size: 12px;
-  color: #166534;
+  color: var(--success-fg);
   margin-top: 6px;
 }
 
@@ -644,23 +843,23 @@ html.agentCollapsed .appShell {
 
 .studyInkModes button {
   padding: 4px 8px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
   font: inherit;
   font-size: 12px;
 }
 
 .studyInkModes button.isActive {
-  border-color: #1d4ed8;
-  background: #eff6ff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
   font-weight: 600;
 }
 
 .studyInkCanvas {
   width: 100%;
   height: 160px;
-  border: 1px dashed #9ca3af;
-  background: #fff;
+  border: 1px dashed var(--fg-subtle);
+  background: var(--bg-elevated);
   touch-action: none;
   cursor: crosshair;
 }
@@ -750,18 +949,18 @@ html.agentCollapsed .appShell {
 }
 
 .studyStepTab.isActive {
-  border: 2px solid #1d4ed8;
-  background: #eff6ff;
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
   font-weight: 700;
 }
 
 .studyStepTab.isDone {
-  background: #ecfdf5;
+  background: var(--success-soft);
 }
 
 .studyResourceBar {
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   padding: 12px;
   display: grid;
   gap: 8px;
@@ -775,8 +974,8 @@ html.agentCollapsed .appShell {
 
 .studyResourceChip {
   padding: 6px 10px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   font-size: 13px;
   max-width: 280px;
   overflow: hidden;
@@ -785,7 +984,7 @@ html.agentCollapsed .appShell {
 }
 
 .studyResourceChip.isSelected {
-  border: 2px solid #1d4ed8;
+  border: 2px solid var(--accent);
 }
 
 .studyResourceMeta {
@@ -794,12 +993,12 @@ html.agentCollapsed .appShell {
   flex-wrap: wrap;
   align-items: center;
   font-size: 13px;
-  color: #4b5563;
+  color: var(--fg-muted);
 }
 
 .studyWorkspace {
-  border: 1px solid #d1d5db;
-  background: #4b5563;
+  border: 1px solid var(--border-strong);
+  background: var(--fg-muted);
   overflow: hidden;
 }
 
@@ -810,9 +1009,9 @@ html.agentCollapsed .appShell {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  color: #111827;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg);
   font-size: 13px;
 }
 
@@ -828,19 +1027,19 @@ html.agentCollapsed .appShell {
 }
 
 .studyToolbarHint {
-  color: #6b7280;
+  color: var(--fg-muted);
 }
 
 .studyToolbar button {
   padding: 4px 8px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
 }
 
 .studyPageInput {
   width: 52px;
   padding: 4px 6px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border-strong);
   text-align: center;
 }
 
@@ -853,12 +1052,12 @@ html.agentCollapsed .appShell {
 .studyDocPane {
   overflow: auto;
   padding: 20px 16px 32px;
-  background: #4b5563;
+  background: var(--fg-muted);
 }
 
 .studySidePane {
-  background: #f8fafc;
-  border-left: 1px solid #d1d5db;
+  background: var(--bg-inset);
+  border-left: 1px solid var(--border-strong);
   overflow: auto;
   display: grid;
   gap: 10px;
@@ -867,8 +1066,8 @@ html.agentCollapsed .appShell {
 }
 
 .studySideCard {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   padding: 10px;
   display: grid;
   gap: 8px;
@@ -881,7 +1080,7 @@ html.agentCollapsed .appShell {
 
 .studySideMuted {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--fg-muted);
 }
 
 .studySideReq {
@@ -891,7 +1090,7 @@ html.agentCollapsed .appShell {
 }
 
 .studySideReq .isMet {
-  color: #166534;
+  color: var(--success-fg);
   font-weight: 600;
 }
 
@@ -909,22 +1108,22 @@ html.agentCollapsed .appShell {
 .studySideCard textarea {
   width: 100%;
   padding: 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border-strong);
   resize: vertical;
 }
 
 .studySideCard button {
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
-  background: #fff;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
   width: fit-content;
 }
 
 .studyQuote {
   font-size: 12px;
   font-style: italic;
-  color: #374151;
-  border-left: 3px solid #fbbf24;
+  color: var(--fg);
+  border-left: 3px solid var(--warn);
   padding-left: 8px;
 }
 
@@ -936,7 +1135,7 @@ html.agentCollapsed .appShell {
 }
 
 .studyAnnotationItem {
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--bg-inset);
   padding-top: 8px;
   font-size: 13px;
   display: grid;
@@ -950,7 +1149,7 @@ html.agentCollapsed .appShell {
 
 .studyPdfPage {
   position: relative;
-  background: #fff;
+  background: var(--bg-elevated);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
@@ -960,7 +1159,7 @@ html.agentCollapsed .appShell {
 
 .studyPdfLoading,
 .studyPdfError {
-  color: #e5e7eb;
+  color: var(--border);
   padding: 24px;
   text-align: center;
 }
@@ -968,7 +1167,7 @@ html.agentCollapsed .appShell {
 .studyPdfFallbackCard {
   max-width: 720px;
   margin: 0 auto;
-  background: #fff;
+  background: var(--bg-elevated);
   padding: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
@@ -977,18 +1176,18 @@ html.agentCollapsed .appShell {
   max-height: 420px;
   overflow: auto;
   padding: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   font-size: 14px;
   white-space: pre-wrap;
   line-height: 1.5;
-  background: #fff;
+  background: var(--bg-elevated);
 }
 
 .studyHighlightMenu {
   position: fixed;
   z-index: 60;
-  background: #fff;
-  border: 1px solid #d1d5db;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   padding: 6px;
   display: grid;
@@ -1005,7 +1204,7 @@ html.agentCollapsed .appShell {
 }
 
 .studyHighlightMenu button:hover {
-  background: #f3f4f6;
+  background: var(--bg-inset);
 }
 
 /* pdf.js text layer — custom selection (native iOS callout/menu disabled) */
@@ -1083,7 +1282,7 @@ html.agentCollapsed .appShell {
 .pdfSelectHint {
   margin-top: 8px;
   font-size: 12px;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
   text-align: center;
 }
 
@@ -1093,8 +1292,8 @@ html.agentCollapsed .appShell {
   flex-wrap: wrap;
   align-items: center;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
-  background: var(--panel, #fff);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
 
 .studyFindBar input {
@@ -1110,7 +1309,7 @@ html.agentCollapsed .appShell {
   max-height: 160px;
   overflow: auto;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
+  border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
 
@@ -1119,21 +1318,21 @@ html.agentCollapsed .appShell {
   gap: 2px;
   text-align: left;
   width: 100%;
-  border: 1px solid var(--border, #e5e7eb);
-  background: var(--panel, #fff);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
   padding: 6px 8px;
   font: inherit;
   cursor: pointer;
 }
 
 .studyFindHit.isActive {
-  border-color: var(--accent, #1d4ed8);
-  background: var(--accent-soft, #eff6ff);
+  border-color: var(--accent, var(--accent));
+  background: var(--accent-soft, var(--accent-soft));
 }
 
 .studyBookmarkChip {
   font-size: 12px;
-  color: var(--muted, #555);
+  color: var(--fg-muted);
 }
 
 @media (max-width: 980px) {
@@ -1143,7 +1342,7 @@ html.agentCollapsed .appShell {
 
   .studySidePane {
     border-left: 0;
-    border-top: 1px solid #d1d5db;
+    border-top: 1px solid var(--border-strong);
     max-height: 420px;
   }
 }
@@ -1154,14 +1353,14 @@ html.agentCollapsed .appShell {
 }
 
 .canvasModules {
-  border: 1px solid var(--border, #c7cdd1);
+  border: 1px solid var(--border);
   border-radius: 4px;
   overflow: hidden;
-  background: var(--panel, #fff);
+  background: var(--bg-elevated);
 }
 
 .canvasModule + .canvasModule {
-  border-top: 1px solid var(--border, #c7cdd1);
+  border-top: 1px solid var(--border);
 }
 
 .canvasModuleHeader {
@@ -1170,7 +1369,7 @@ html.agentCollapsed .appShell {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: color-mix(in srgb, var(--border, #e5e7eb) 55%, var(--panel, #fff));
+  background: color-mix(in srgb, var(--border) 55%, var(--bg-elevated));
   font-weight: 700;
   font-size: 14px;
   cursor: pointer;
@@ -1203,11 +1402,11 @@ html.agentCollapsed .appShell {
 .canvasModuleCount {
   font-weight: 500;
   font-size: 12px;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .canvasModuleItems {
-  background: var(--panel, #fff);
+  background: var(--bg-elevated);
 }
 
 .canvasModuleItem {
@@ -1216,11 +1415,11 @@ html.agentCollapsed .appShell {
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
-  border-top: 1px solid var(--border, #e8e8e8);
+  border-top: 1px solid var(--border);
 }
 
 .canvasModuleItem:hover {
-  background: color-mix(in srgb, #0374b5 8%, var(--panel, #fff));
+  background: color-mix(in srgb, #0374b5 8%, var(--bg-elevated));
 }
 
 .canvasModuleItemIcon {
@@ -1250,19 +1449,19 @@ html.agentCollapsed .appShell {
   gap: 8px;
   margin-top: 2px;
   font-size: 12px;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .canvasModuleStatus.tone-ok {
-  color: #166534;
+  color: var(--success-fg);
 }
 
 .canvasModuleStatus.tone-warn {
-  color: #a16207;
+  color: var(--warn-fg);
 }
 
 .canvasModuleStatus.tone-bad {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .canvasModuleItemActions {
@@ -1293,7 +1492,7 @@ html.agentCollapsed .appShell {
 
 .studyNotebookPane {
   min-height: 680px;
-  background: #e5e7eb;
+  background: var(--border);
   overflow: auto;
 }
 
@@ -1309,8 +1508,8 @@ html.agentCollapsed .appShell {
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px;
-  background: #fff;
-  border-bottom: 1px solid #d1d5db;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .studyNotebookScroll {
@@ -1324,15 +1523,15 @@ html.agentCollapsed .appShell {
   width: min(920px, 100%);
   padding: 48px 24px;
   text-align: center;
-  color: #6b7280;
-  background: #fff;
-  border: 1px dashed #9ca3af;
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
+  border: 1px dashed var(--fg-subtle);
 }
 
 .studyNotebookEntry {
   width: min(920px, 100%);
   padding: 28px 32px 32px;
-  background: #fff;
+  background: var(--bg-elevated);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   cursor: pointer;
   display: grid;
@@ -1340,23 +1539,23 @@ html.agentCollapsed .appShell {
 }
 
 .studyNotebook.is-notebook .studyNotebookEntry {
-  border-left: 2px solid #f7a5a5;
+  border-left: 2px solid var(--danger);
   padding-left: 44px;
 }
 
 .studyNotebook.is-printer .studyNotebookEntry {
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border-strong);
 }
 
 .studyNotebookEntry.isActive {
-  outline: 2px solid #1d4ed8;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .studyNotebookHighlight {
   font-size: 14px;
   line-height: 1.55;
-  color: #111827;
+  color: var(--fg);
   background: #fef9c3;
   padding: 10px 12px;
   border-radius: 4px;
@@ -1366,7 +1565,7 @@ html.agentCollapsed .appShell {
   display: inline-block;
   font-size: 11px;
   font-weight: 700;
-  color: #6b7280;
+  color: var(--fg-muted);
   margin-right: 8px;
 }
 
@@ -1378,8 +1577,8 @@ html.agentCollapsed .appShell {
 
 /* Horizontal flow track: done = shaded, active = green, pending = plain. */
 .flowStepper {
-  background: #fff;
-  border-bottom: 1px solid #d1d5db;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-strong);
   padding: 8px 12px;
   overflow-x: auto;
 }
@@ -1406,7 +1605,7 @@ html.agentCollapsed .appShell {
   height: 8px;
   margin: 0 2px;
   flex: none;
-  background: #9ca3af;
+  background: var(--fg-subtle);
   clip-path: polygon(0 40%, 60% 40%, 60% 0, 100% 50%, 60% 100%, 60% 60%, 0 60%);
 }
 
@@ -1415,10 +1614,10 @@ html.agentCollapsed .appShell {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: #fff;
-  color: #374151;
+  background: var(--bg-elevated);
+  color: var(--fg);
   font: inherit;
   font-size: 13px;
   white-space: nowrap;
@@ -1426,28 +1625,28 @@ html.agentCollapsed .appShell {
 }
 
 .flowStep.is-pending button {
-  background: #fff;
-  color: #6b7280;
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
 }
 
 .flowStep.is-done button {
-  background: #e5e7eb;
-  border-color: #cbd5e1;
-  color: #4b5563;
+  background: var(--bg-inset);
+  border-color: var(--border-strong);
+  color: var(--fg-muted);
 }
 
 .flowStep.is-active button {
-  background: #dcfce7;
-  border-color: #16a34a;
-  color: #14532d;
+  background: var(--success-soft);
+  border-color: var(--success);
+  color: var(--success-fg);
   font-weight: 700;
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 25%, transparent);
 }
 
 .flowStep.is-failed button {
-  background: #fee2e2;
-  border-color: #ef4444;
-  color: #7f1d1d;
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger-fg);
 }
 
 .flowStepIndex {
@@ -1470,15 +1669,15 @@ html.agentCollapsed .appShell {
 }
 
 .flowStepDot.is-easy {
-  background: #16a34a;
+  background: var(--success);
 }
 
 .flowStepDot.is-medium {
-  background: #eab308;
+  background: var(--warn);
 }
 
 .flowStepDot.is-hard {
-  background: #dc2626;
+  background: var(--danger);
 }
 
 /* Metrics panel */
@@ -1491,7 +1690,7 @@ html.agentCollapsed .appShell {
 }
 
 .metricLabel {
-  color: #6b7280;
+  color: var(--fg-muted);
   flex: none;
   min-width: 118px;
 }
@@ -1507,7 +1706,7 @@ html.agentCollapsed .appShell {
   height: 7px;
   min-width: 48px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--border);
   overflow: hidden;
 }
 
@@ -1518,15 +1717,15 @@ html.agentCollapsed .appShell {
 }
 
 .metricFill.is-high {
-  background: #16a34a;
+  background: var(--success);
 }
 
 .metricFill.is-mid {
-  background: #eab308;
+  background: var(--warn);
 }
 
 .metricFill.is-low {
-  background: #dc2626;
+  background: var(--danger);
 }
 
 .metricChips {
@@ -1543,24 +1742,24 @@ html.agentCollapsed .appShell {
 }
 
 .metricChip.is-easy {
-  background: #dcfce7;
-  color: #14532d;
+  background: var(--success-soft);
+  color: var(--success-fg);
 }
 
 .metricChip.is-medium {
-  background: #fef9c3;
-  color: #713f12;
+  background: var(--warn-soft);
+  color: var(--warn-fg);
 }
 
 .metricChip.is-hard {
-  background: #fee2e2;
-  color: #7f1d1d;
+  background: var(--danger-soft);
+  color: var(--danger-fg);
 }
 
 .metricRate {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--border, #e5e7eb);
+  border-top: 1px solid var(--border);
   display: grid;
   gap: 6px;
 }
@@ -1575,13 +1774,20 @@ html.agentCollapsed .appShell {
 /* The paper IS the field: ruled lines, no border, no visible input chrome. */
 .studyPaper {
   position: relative;
+  /*
+   * The paper stays light in every theme, like a PDF page. Recognition
+   * flattens the ink onto a white bitmap before OCR, so light-on-dark strokes
+   * would come out white-on-white and recognise as nothing.
+   */
+  background-color: var(--paper);
+  color: var(--paper-fg);
   /* Lines land exactly on the text baselines (line-height 28px). */
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
     transparent 27px,
-    #c7d7f0 27px,
-    #c7d7f0 28px
+    var(--paper-rule) 27px,
+    var(--paper-rule) 28px
   );
   background-position: 0 0;
   /* Pencil strokes must not scroll the page. */
@@ -1608,11 +1814,11 @@ html.agentCollapsed .appShell {
   font-size: 17px;
   /* Must equal the rule spacing so typing sits on the lines. */
   line-height: 28px;
-  color: #111827;
+  color: var(--paper-fg);
 }
 
 .studyPaperText::placeholder {
-  color: #9ca3af;
+  color: var(--fg-subtle);
 }
 
 /* Ink layer is display only; the textarea underneath takes finger taps. */
@@ -1638,21 +1844,21 @@ html.agentCollapsed .appShell {
   border: none;
   background: none;
   padding: 0;
-  color: #1d4ed8;
+  color: var(--accent);
   text-decoration: underline;
   font: inherit;
   cursor: pointer;
 }
 
 .studyPaperSave:disabled {
-  color: #9ca3af;
+  color: var(--fg-subtle);
   text-decoration: none;
   cursor: default;
 }
 
 .studyToolbar button.isActive {
-  border-color: #1d4ed8;
-  background: #eff6ff;
+  border-color: var(--accent);
+  background: var(--accent-soft);
   font-weight: 600;
 }
 
@@ -1675,7 +1881,7 @@ html.agentCollapsed .appShell {
   font: inherit;
   line-height: 1.5;
   background: transparent;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 8px;
   resize: vertical;
 }
@@ -1696,20 +1902,20 @@ html.agentCollapsed .appShell {
 }
 
 .smartTextGhost {
-  color: var(--muted, #9ca3af);
+  color: var(--muted, var(--fg-subtle));
 }
 
 .smartTextHint {
   margin-top: 4px;
   font-size: 11px;
-  color: var(--muted, #6b7280);
+  color: var(--muted, var(--fg-muted));
 }
 
 .smartTextHint {
   display: inline-block;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--panel, #fff);
+  background: var(--bg-elevated);
   padding: 4px 10px;
   cursor: pointer;
   font: inherit;
