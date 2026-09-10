@@ -105,6 +105,8 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
       if (target.closest(".penBridgeSheet") || target.closest(".studyInkPad") || target.closest(".studyInkCanvas")) {
         return;
       }
+      // The study notebook is its own pen surface — it must not open the sheet.
+      if (target.closest(".studyPaper")) return;
       if (target.closest(".docScan") || target.closest("canvas")) return;
 
       const editable = isEditable(target)

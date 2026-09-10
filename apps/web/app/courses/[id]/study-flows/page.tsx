@@ -100,8 +100,6 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
   const [savedNote, setSavedNote] = useState<SavedNoteInfo | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"resource" | "notebook">("resource");
   const [paperStyle, setPaperStyle] = useState<PaperStyle>("notebook");
-  const [inkDraft, setInkDraft] = useState("");
-  const [inkLatex, setInkLatex] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarDate, setCalendarDate] = useState("");
   const [calendarTime, setCalendarTime] = useState("");
@@ -811,36 +809,14 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
     }
   }
 
-  async function onRecognizeInk(imageBase64: string, mode: "text" | "math") {
+  /** Returns the recognized text; the notebook inserts it at the caret. */
+  async function onRecognizeInk(imageBase64: string, mode: "text" | "math"): Promise<string> {
     try {
       const res = await recognizeHandwriting(imageBase64, mode);
-      const next = res.text || "";
-      setInkDraft(next);
-      setInkLatex(res.latex || null);
-      if (activeExcerpt && next) {
-        setCommentDraft((prev) => (prev.trim() ? `${prev.trim()} ${next}` : next));
-      }
+      return (res.text || "").trim();
     } catch (e) {
       setError(toErrorMessage(e));
-    }
-  }
-
-  async function saveInkNote() {
-    if (!activeExcerpt || !inkDraft.trim()) return;
-    setBusy(true);
-    try {
-      await saveToNotes({
-        highlight: activeExcerpt.text,
-        student_text: inkDraft.trim(),
-        kind: "ink",
-        latex: inkLatex,
-      });
-      setInkDraft("");
-      setInkLatex(null);
-    } catch (e) {
-      setError(toErrorMessage(e));
-    } finally {
-      setBusy(false);
+      return "";
     }
   }
 
@@ -1398,21 +1374,6 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                       onSaveComment={saveComment}
                       saveBusy={busy}
                     />
-                    {inkDraft ? (
-                      <div className="studySideCard" style={{ margin: 12 }}>
-                        <div className="studySideTitle">Recognized ink</div>
-                        <textarea
-                          value={inkDraft}
-                          onChange={(e) => setInkDraft(e.target.value)}
-                          rows={3}
-                          spellCheck
-                          autoCorrect="on"
-                        />
-                        <button type="button" disabled={busy} onClick={saveInkNote}>
-                          Save ink to notes
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 )}
 

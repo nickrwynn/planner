@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudyExcerpt } from "../lib/studyflow-actions";
 
 export type PaperStyle = "notebook" | "printer";
+
+/** Distance between ruled lines, in px. Text line-height matches this. */
+const RULE = 28;
+/** Pause after the pencil lifts before ink is recognized. */
+const RECOGNIZE_IDLE_MS = 400;
+const MIN_ROWS = 10;
 
 type StudyNotebookProps = {
   excerpts: StudyExcerpt[];
@@ -11,7 +17,7 @@ type StudyNotebookProps = {
   paperStyle: PaperStyle;
   onPaperStyleChange: (style: PaperStyle) => void;
   onSelectExcerpt: (id: string) => void;
-  onRecognizeInk: (imageBase64: string, mode: "text" | "math") => Promise<void>;
+  onRecognizeInk: (imageBase64: string, mode: "text" | "math") => Promise<string>;
   inkDisabled?: boolean;
   commentDraft?: string;
   onCommentDraftChange?: (text: string) => void;
@@ -19,6 +25,14 @@ type StudyNotebookProps = {
   saveBusy?: boolean;
 };
 
+/**
+ * One sheet of ruled paper per excerpt.
+ *
+ * There is no separate input box and no separate ink pad: the paper *is* the
+ * field. Apple Pencil draws on the lines and the ink is recognized into text;
+ * a finger or mouse lands on the textarea underneath, so the keyboard opens
+ * and typing appears on the same lines.
+ */
 export function StudyNotebook({
   excerpts,
   activeExcerptId,
@@ -33,102 +47,172 @@ export function StudyNotebook({
   saveBusy,
 }: StudyNotebookProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const drawing = useRef(false);
-  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInkRef = useRef(false);
-  const [hasInk, setHasInk] = useState(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [mode, setMode] = useState<"text" | "math">("text");
+  const [writing, setWriting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
-  useEffect(() => {
+  const text = commentDraft ?? "";
+
+  /** Match the backing store to the CSS box so ink is not blurry or offset. */
+  const sizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const surface = surfaceRef.current;
+    if (!canvas || !surface) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.strokeStyle = "#111827";
+    ctx.strokeStyle = "#1e3a8a";
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+  }, []);
+
+  useEffect(() => {
+    sizeCanvas();
+    const surface = surfaceRef.current;
+    if (!surface || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => sizeCanvas());
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [sizeCanvas, activeExcerptId]);
+
+  useEffect(() => {
     return () => {
       if (idleTimer.current) clearTimeout(idleTimer.current);
     };
-  }, [activeExcerptId]);
+  }, []);
 
-  function pointerPos(e: React.PointerEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  function clearInk() {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    hasInkRef.current = false;
+  }
+
+  /** Insert recognized text at the caret so writing continues where you were. */
+  function insertAtCaret(value: string) {
+    const el = textRef.current;
+    const current = text;
+    if (!el) {
+      onCommentDraftChange?.(current + value);
+      return;
+    }
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const needsSpace = start > 0 && !/\s$/.test(current.slice(0, start));
+    const addition = `${needsSpace ? " " : ""}${value}`;
+    const next = `${current.slice(0, start)}${addition}${current.slice(end)}`;
+    onCommentDraftChange?.(next);
+    const caret = start + addition.length;
+    requestAnimationFrame(() => {
+      try {
+        el.setSelectionRange(caret, caret);
+      } catch {
+        // ignore
+      }
+    });
+  }
+
+  async function recognize() {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasInkRef.current || inkDisabled || busy) return;
+    setBusy(true);
+    try {
+      // Flatten onto white: recognition expects dark ink on a light page.
+      const flat = document.createElement("canvas");
+      flat.width = canvas.width;
+      flat.height = canvas.height;
+      const fctx = flat.getContext("2d");
+      if (!fctx) return;
+      fctx.fillStyle = "#ffffff";
+      fctx.fillRect(0, 0, flat.width, flat.height);
+      fctx.drawImage(canvas, 0, 0);
+
+      const dataUrl = flat.toDataURL("image/jpeg", 0.82);
+      const base64 = dataUrl.split(",", 1)[1] || dataUrl;
+      const recognized = await onRecognizeInk(base64, modeRef.current);
+      if (recognized?.trim()) {
+        insertAtCaret(recognized.trim());
+        clearInk();
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   function scheduleRecognize() {
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    idleTimer.current = setTimeout(() => void recognizeInk(), 120);
+    idleTimer.current = setTimeout(() => void recognize(), RECOGNIZE_IDLE_MS);
   }
 
-  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (inkDisabled) return;
-    if (e.pointerType === "touch") return;
+  function pointAt(e: React.PointerEvent) {
+    const surface = surfaceRef.current!;
+    const rect = surface.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    // Finger and mouse fall through to the textarea so the keyboard opens.
+    if (e.pointerType !== "pen" || inkDisabled) return;
+    // Stop the pen from focusing the field or opening the global ink sheet.
+    e.preventDefault();
+    e.stopPropagation();
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    canvas.setPointerCapture(e.pointerId);
-    drawing.current = true;
-    const { x, y } = pointerPos(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }
 
-  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
-    if (!drawing.current) return;
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-    const { x, y } = pointerPos(e);
+    drawing.current = true;
+    setWriting(true);
+    const { x, y } = pointAt(e);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    const { x, y } = pointAt(e);
     ctx.lineTo(x, y);
     ctx.stroke();
     hasInkRef.current = true;
-    setHasInk(true);
   }
 
-  function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    if (!drawing.current) return;
     drawing.current = false;
+    setWriting(false);
     try {
-      canvasRef.current?.releasePointerCapture(e.pointerId);
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
       // ignore
     }
     scheduleRecognize();
   }
 
-  async function recognizeInk() {
-    const canvas = canvasRef.current;
-    if (!canvas || !hasInkRef.current || inkDisabled || busy) return;
-    setBusy(true);
-    try {
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-      const base64 = dataUrl.split(",", 1)[1] || dataUrl;
-      await onRecognizeInk(base64, "text");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function clearInk() {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, rect.width, rect.height);
-    hasInkRef.current = false;
-    setHasInk(false);
-  }
+  const rows = Math.max(MIN_ROWS, text.split("\n").length + 1);
 
   return (
     <div className={`studyNotebook is-${paperStyle}`}>
@@ -136,21 +220,39 @@ export function StudyNotebook({
         <span className="studySideTitle" style={{ margin: 0 }}>
           Study notebook
         </span>
-        <div className="studyInkModes">
-          <button
-            type="button"
-            className={paperStyle === "notebook" ? "isActive" : ""}
-            onClick={() => onPaperStyleChange("notebook")}
-          >
-            Notebook
-          </button>
-          <button
-            type="button"
-            className={paperStyle === "printer" ? "isActive" : ""}
-            onClick={() => onPaperStyleChange("printer")}
-          >
-            Printer
-          </button>
+        <div className="studyNotebookTools">
+          <div className="studyInkModes">
+            <button
+              type="button"
+              className={mode === "text" ? "isActive" : ""}
+              onClick={() => setMode("text")}
+            >
+              Text
+            </button>
+            <button
+              type="button"
+              className={mode === "math" ? "isActive" : ""}
+              onClick={() => setMode("math")}
+            >
+              Math
+            </button>
+          </div>
+          <div className="studyInkModes">
+            <button
+              type="button"
+              className={paperStyle === "notebook" ? "isActive" : ""}
+              onClick={() => onPaperStyleChange("notebook")}
+            >
+              Ruled
+            </button>
+            <button
+              type="button"
+              className={paperStyle === "printer" ? "isActive" : ""}
+              onClick={() => onPaperStyleChange("printer")}
+            >
+              Blank
+            </button>
+          </div>
         </div>
       </div>
 
@@ -172,60 +274,62 @@ export function StudyNotebook({
                   <span className="studyNotebookPage">p{ex.page}</span>
                   {ex.text}
                 </div>
-                <div className="studyNotebookComment">
-                  {isActive && onCommentDraftChange ? (
-                    <>
+
+                {isActive && onCommentDraftChange ? (
+                  <>
+                    <div
+                      ref={surfaceRef}
+                      className={`studyPaper${writing ? " isWriting" : ""}`}
+                      onPointerDownCapture={onPointerDown}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerUp}
+                    >
                       <textarea
-                        value={commentDraft ?? ex.comment ?? ""}
+                        ref={textRef}
+                        className="studyPaperText"
+                        value={text}
                         onChange={(e) => onCommentDraftChange(e.target.value)}
-                        placeholder="Your comment or notes…"
-                        rows={4}
+                        rows={rows}
+                        placeholder="Write with your pencil or type with a finger…"
                         spellCheck
                         autoCorrect="on"
                         autoCapitalize="sentences"
                       />
+                      <canvas ref={canvasRef} className="studyPaperInk" />
+                    </div>
+                    <div className="studyPaperFooter">
+                      <span className="studySideMuted">
+                        {busy
+                          ? "Reading your writing…"
+                          : `Pencil writes · finger types · ${mode === "math" ? "math → LaTeX" : "text"}`}
+                      </span>
                       {onSaveComment ? (
-                        <button type="button" disabled={saveBusy || !(commentDraft ?? ex.comment)?.trim()} onClick={onSaveComment}>
-                          Save comment
+                        <button
+                          type="button"
+                          className="studyPaperSave"
+                          disabled={saveBusy || !text.trim()}
+                          onClick={onSaveComment}
+                        >
+                          {saveBusy ? "Saving…" : "Save to notes"}
                         </button>
                       ) : null}
-                    </>
-                  ) : (
-                    <div className="studyNotebookCommentText">
-                      {ex.comment?.trim() || ex.summary?.trim() || (
-                        <span className="studySideMuted">Tap to add a comment…</span>
-                      )}
                     </div>
-                  )}
-                </div>
+                  </>
+                ) : (
+                  <div className="studyNotebookCommentText">
+                    {ex.comment?.trim() || ex.summary?.trim() || (
+                      <span className="studySideMuted">Tap to write here…</span>
+                    )}
+                  </div>
+                )}
               </article>
             );
           })
         )}
-
-        {activeExcerptId ? (
-          <div className="studyNotebookInkZone">
-            <div className="studySideTitle">Write with Apple Pencil</div>
-            <div className="studySideMuted">Pencil writes here · finger types in the comment box above.</div>
-            <canvas
-              ref={canvasRef}
-              className="studyNotebookInkCanvas"
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-            />
-            <div className="studySideActions">
-              <button type="button" disabled={inkDisabled || busy || !hasInk} onClick={() => void recognizeInk()}>
-                {busy ? "Recognizing…" : "Recognize ink"}
-              </button>
-              <button type="button" disabled={inkDisabled} onClick={clearInk}>
-                Clear
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
 }
+
+export { RULE };

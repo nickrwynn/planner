@@ -1340,16 +1340,8 @@ html.agentCollapsed .appShell {
 }
 
 .studyNotebook.is-notebook .studyNotebookEntry {
-  background-image: repeating-linear-gradient(
-    transparent,
-    transparent 27px,
-    #dbeafe 27px,
-    #dbeafe 28px
-  );
-  background-size: 100% 28px;
-  background-position: 0 12px;
-  border-left: 3px solid #f87171;
-  padding-left: 36px;
+  border-left: 2px solid #f7a5a5;
+  padding-left: 44px;
 }
 
 .studyNotebook.is-printer .studyNotebookEntry {
@@ -1378,37 +1370,95 @@ html.agentCollapsed .appShell {
   margin-right: 8px;
 }
 
-.studyNotebookComment textarea {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #d1d5db;
-  font: inherit;
-  line-height: 1.5;
-  resize: vertical;
-  background: rgba(255, 255, 255, 0.92);
-}
-
 .studyNotebookCommentText {
   font-size: 15px;
   line-height: 1.6;
   white-space: pre-wrap;
 }
 
-.studyNotebookInkZone {
-  width: min(920px, 100%);
-  padding: 16px;
-  background: #fff;
-  border: 1px solid #d1d5db;
-  display: grid;
+.studyNotebookTools {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.studyNotebookInkCanvas {
-  width: 100%;
-  height: 220px;
-  border: 1px dashed #9ca3af;
-  background: #fff;
+/* The paper IS the field: ruled lines, no border, no visible input chrome. */
+.studyPaper {
+  position: relative;
+  /* Lines land exactly on the text baselines (line-height 28px). */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    #c7d7f0 27px,
+    #c7d7f0 28px
+  );
+  background-position: 0 0;
+  /* Pencil strokes must not scroll the page. */
   touch-action: none;
+}
+
+.studyNotebook.is-printer .studyPaper {
+  background-image: none;
+}
+
+.studyPaperText {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  resize: none;
+  overflow: hidden;
+  font-family: inherit;
+  font-size: 17px;
+  /* Must equal the rule spacing so typing sits on the lines. */
+  line-height: 28px;
+  color: #111827;
+}
+
+.studyPaperText::placeholder {
+  color: #9ca3af;
+}
+
+/* Ink layer is display only; the textarea underneath takes finger taps. */
+.studyPaperInk {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.studyPaperFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+}
+
+.studyPaperSave {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #1d4ed8;
+  text-decoration: underline;
+  font: inherit;
+  cursor: pointer;
+}
+
+.studyPaperSave:disabled {
+  color: #9ca3af;
+  text-decoration: none;
+  cursor: default;
 }
 
 .studyToolbar button.isActive {
