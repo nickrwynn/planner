@@ -1376,6 +1376,195 @@ html.agentCollapsed .appShell {
   white-space: pre-wrap;
 }
 
+/* Horizontal flow track: done = shaded, active = green, pending = plain. */
+.flowStepper {
+  background: #fff;
+  border-bottom: 1px solid #d1d5db;
+  padding: 8px 12px;
+  overflow-x: auto;
+}
+
+.flowStepperTrack {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: max-content;
+}
+
+.flowStep {
+  display: flex;
+  align-items: center;
+}
+
+/* Arrow between steps. */
+.flowStep + .flowStep::before {
+  content: "";
+  width: 18px;
+  height: 8px;
+  margin: 0 2px;
+  flex: none;
+  background: #9ca3af;
+  clip-path: polygon(0 40%, 60% 40%, 60% 0, 100% 50%, 60% 100%, 60% 60%, 0 60%);
+}
+
+.flowStep button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.flowStep.is-pending button {
+  background: #fff;
+  color: #6b7280;
+}
+
+.flowStep.is-done button {
+  background: #e5e7eb;
+  border-color: #cbd5e1;
+  color: #4b5563;
+}
+
+.flowStep.is-active button {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #14532d;
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.18);
+}
+
+.flowStep.is-failed button {
+  background: #fee2e2;
+  border-color: #ef4444;
+  color: #7f1d1d;
+}
+
+.flowStepIndex {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.flowStepTime {
+  font-size: 11px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Effort rating: green easy, yellow medium, red hard. */
+.flowStepDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.flowStepDot.is-easy {
+  background: #16a34a;
+}
+
+.flowStepDot.is-medium {
+  background: #eab308;
+}
+
+.flowStepDot.is-hard {
+  background: #dc2626;
+}
+
+/* Metrics panel */
+.metricRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.metricLabel {
+  color: #6b7280;
+  flex: none;
+  min-width: 118px;
+}
+
+.metricValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.metricBar {
+  position: relative;
+  flex: 1;
+  height: 7px;
+  min-width: 48px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.metricFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.metricFill.is-high {
+  background: #16a34a;
+}
+
+.metricFill.is-mid {
+  background: #eab308;
+}
+
+.metricFill.is-low {
+  background: #dc2626;
+}
+
+.metricChips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.metricChip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.metricChip.is-easy {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.metricChip.is-medium {
+  background: #fef9c3;
+  color: #713f12;
+}
+
+.metricChip.is-hard {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.metricRate {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #e5e7eb);
+  display: grid;
+  gap: 6px;
+}
+
 .studyNotebookTools {
   display: flex;
   align-items: center;

@@ -17,16 +17,25 @@ import {
 import {
   ACTION_MENU,
   actionLabel,
+  archiveSteps,
+  bankElapsed,
   cloneTemplateToSteps,
   DEFAULT_FLOW_TEMPLATE,
+  deriveDifficulty,
   loadTemplate,
+  retimeSteps,
   saveTemplateLocal,
+  stepMetrics,
+  type Difficulty,
   type ExcerptStep,
   type FlowTemplate,
   type FlowTemplateStep,
+  type StepMetrics,
   type StudyExcerpt,
   type StudyFlowAction,
 } from "../../../../lib/studyflow-actions";
+import { StudyFlowStepper } from "../../../../components/study-flow-stepper";
+import { StudyMetrics } from "../../../../components/study-metrics";
 import type { Resource, StudyFlow, StudyFlowRun } from "../../../../lib/types";
 
 const PdfReader = dynamic(
@@ -623,21 +632,38 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
     setMenu(null);
   }
 
-  function markStepDone(excerptId: string, stepId: string, patch?: Partial<StudyExcerpt>) {
+  /**
+   * Complete a step: bank its time, record any score it produced, auto-rate
+   * its difficulty, then start the clock on the next step.
+   */
+  function markStepDone(
+    excerptId: string,
+    stepId: string,
+    patch?: Partial<StudyExcerpt>,
+    outcome?: Pick<StepMetrics, "mastery_pct" | "comprehension_pct">
+  ) {
     const excerpt = excerpts.find((e) => e.id === excerptId);
     if (!excerpt) return;
-    let steps = excerpt.steps.map((s) => (s.id === stepId ? { ...s, status: "done" as const } : s));
+
     let cursor = excerpt.cursor_step_index;
-    const cur = excerpt.steps[cursor];
-    if (cur?.id === stepId) {
-      const nextIdx = cursor + 1;
-      if (nextIdx < steps.length) {
-        steps = steps.map((s, i) => (i === nextIdx ? { ...s, status: "active" } : s));
-        cursor = nextIdx;
-      } else {
-        cursor = steps.length;
-      }
+    if (excerpt.steps[cursor]?.id === stepId) {
+      cursor = cursor + 1 < excerpt.steps.length ? cursor + 1 : excerpt.steps.length;
     }
+    const nextActiveIndex = cursor < excerpt.steps.length ? cursor : -1;
+
+    const steps = retimeSteps(excerpt.steps, nextActiveIndex).map((s, i) => {
+      if (s.id === stepId) {
+        const metrics: StepMetrics = { ...stepMetrics(s), ...outcome };
+        // Auto-rate on completion, but never override a manual rating.
+        if (metrics.difficulty_source !== "manual") {
+          metrics.difficulty = deriveDifficulty(s.action, metrics);
+          metrics.difficulty_source = "auto";
+        }
+        return { ...s, status: "done" as const, metrics };
+      }
+      return i === nextActiveIndex ? { ...s, status: "active" as const } : s;
+    });
+
     const nextExcerpt: StudyExcerpt = { ...excerpt, ...patch, steps, cursor_step_index: cursor };
     void updateExcerpts(
       excerpts.map((e) => (e.id === excerptId ? nextExcerpt : e)),
@@ -648,11 +674,61 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
     }
   }
 
-  function restartExcerpt(excerptId: string) {
-    const excerpt = excerpts.find((e) => e.id === excerptId);
+  /** Jump to a step from the stepper, moving the clock with it. */
+  function selectStep(index: number) {
+    if (!activeExcerpt) return;
+    const target = activeExcerpt.steps[index];
+    if (!target) return;
+    const steps = retimeSteps(activeExcerpt.steps, index).map((s, i) => ({
+      ...s,
+      status:
+        i === index
+          ? ("active" as const)
+          : s.status === "done"
+            ? ("done" as const)
+            : ("pending" as const),
+    }));
+    const next: StudyExcerpt = { ...activeExcerpt, cursor_step_index: index, steps };
+    void updateExcerpts(
+      excerpts.map((e) => (e.id === activeExcerpt.id ? next : e)),
+      activeExcerpt.id
+    );
+    openActionForExcerpt(next, target.action);
+  }
+
+  /** Manual effort rating; overrides the derived one from then on. */
+  function rateStep(stepId: string, difficulty: Difficulty) {
+    if (!activeExcerpt) return;
+    const steps = activeExcerpt.steps.map((s) =>
+      s.id === stepId
+        ? {
+            ...s,
+            metrics: {
+              ...stepMetrics(s),
+              difficulty,
+              difficulty_source: "manual" as const,
+            },
+          }
+        : s
+    );
+    const next: StudyExcerpt = { ...activeExcerpt, steps };
+    void updateExcerpts(
+      excerpts.map((e) => (e.id === activeExcerpt.id ? next : e)),
+      activeExcerpt.id
+    );
+  }
+
+  /** Start the flow over, keeping the measured history of the previous pass. */
+  function restartExcerpt(excerptId: string, from?: StudyExcerpt) {
+    const excerpt = from ?? excerpts.find((e) => e.id === excerptId);
     if (!excerpt) return;
     const steps = cloneTemplateToSteps(template);
-    const nextExcerpt: StudyExcerpt = { ...excerpt, steps, cursor_step_index: 0 };
+    const nextExcerpt: StudyExcerpt = {
+      ...excerpt,
+      history: [...(excerpt.history ?? []), ...archiveSteps(excerpt)],
+      steps,
+      cursor_step_index: 0,
+    };
     void updateExcerpts(
       excerpts.map((e) => (e.id === excerptId ? nextExcerpt : e)),
       excerptId
@@ -743,7 +819,17 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
         kind: "summary",
       });
       if (activeStep && (activeStep.action === "summarize" || activeStep.action === "hide_recall_summarize")) {
-        markStepDone(activeExcerpt.id, activeStep.id, { summary: summaryDraft.trim() });
+        // The scorer's 0-1 score is the comprehension signal; writing from
+        // memory also demonstrates recall, so it counts toward mastery.
+        const pct = Math.round(score.score * 100);
+        markStepDone(
+          activeExcerpt.id,
+          activeStep.id,
+          { summary: summaryDraft.trim() },
+          activeStep.action === "hide_recall_summarize"
+            ? { comprehension_pct: pct, mastery_pct: pct }
+            : { comprehension_pct: pct }
+        );
       }
     } catch (e) {
       setError(toErrorMessage(e));
@@ -795,17 +881,50 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
     if (!activeExcerpt || !activeStep || activeStep.action !== "quiz") return;
     setQuizPassed(pass);
     if (pass) {
-      markStepDone(activeExcerpt.id, activeStep.id);
+      markStepDone(activeExcerpt.id, activeStep.id, undefined, { mastery_pct: 100 });
       return;
     }
+    // Record the failure before applying the policy: a restart would
+    // otherwise discard the only evidence that this material was hard.
+    const failedId = activeStep.id;
+    const withFailure: StudyExcerpt = {
+      ...activeExcerpt,
+      steps: bankElapsed(activeExcerpt.steps).map((s) =>
+        s.id === failedId
+          ? {
+              ...s,
+              status: "failed" as const,
+              metrics: {
+                ...stepMetrics(s),
+                mastery_pct: 0,
+                difficulty: "hard" as const,
+                difficulty_source: "auto" as const,
+              },
+            }
+          : s
+      ),
+    };
+
     const policy = activeStep.on_fail || "restart_sequence";
     if (policy === "restart_sequence") {
-      restartExcerpt(activeExcerpt.id);
+      restartExcerpt(activeExcerpt.id, withFailure);
     } else if (policy === "retry_step") {
+      // Re-enter the same step; retimeSteps counts it as another attempt.
+      const steps = retimeSteps(withFailure.steps, activeExcerpt.cursor_step_index).map((s, i) =>
+        i === activeExcerpt.cursor_step_index ? { ...s, status: "active" as const } : s
+      );
+      void updateExcerpts(
+        excerpts.map((e) => (e.id === activeExcerpt.id ? { ...withFailure, steps } : e)),
+        activeExcerpt.id
+      );
       setArtifactView(null);
       void runStudyLabAction(activeExcerpt, "quiz");
     } else {
-      markStepDone(activeExcerpt.id, activeStep.id);
+      void updateExcerpts(
+        excerpts.map((e) => (e.id === activeExcerpt.id ? withFailure : e)),
+        activeExcerpt.id
+      );
+      markStepDone(activeExcerpt.id, failedId, undefined, { mastery_pct: 0 });
     }
   }
 
@@ -1230,6 +1349,14 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                 ) : null}
               </div>
 
+              {activeExcerpt ? (
+                <StudyFlowStepper
+                  steps={activeExcerpt.steps}
+                  activeIndex={activeExcerpt.cursor_step_index}
+                  onSelect={selectStep}
+                />
+              ) : null}
+
               {findOpen ? (
                 <div>
                   <form
@@ -1379,44 +1506,18 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
 
                 <aside className="studySidePane">
                   {activeExcerpt ? (
-                    <div className="studySideCard">
-                      <div className="studySideTitle">Checklist</div>
-                      <ol className="studyChecklist">
-                        {activeExcerpt.steps.map((s, i) => (
-                          <li key={s.id} className={`studyCheckItem is-${s.status}`}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = {
-                                  ...activeExcerpt,
-                                  cursor_step_index: i,
-                                  steps: activeExcerpt.steps.map((x, idx) => ({
-                                    ...x,
-                                    status:
-                                      idx === i
-                                        ? ("active" as const)
-                                        : x.status === "done"
-                                          ? ("done" as const)
-                                          : ("pending" as const),
-                                  })),
-                                };
-                                void updateExcerpts(
-                                  excerpts.map((e) => (e.id === activeExcerpt.id ? next : e)),
-                                  activeExcerpt.id
-                                );
-                                openActionForExcerpt(next, s.action);
-                              }}
-                            >
-                              {i + 1}. {actionLabel(s.action)}
-                              {s.one_time ? " *" : ""} — {s.status}
-                            </button>
-                          </li>
-                        ))}
-                      </ol>
-                      <button type="button" onClick={() => setCalendarOpen(true)}>
-                        Add to calendar
-                      </button>
-                    </div>
+                    <>
+                      <StudyMetrics
+                        excerpt={activeExcerpt}
+                        activeStep={activeStep}
+                        onRateStep={rateStep}
+                      />
+                      <div className="studySideCard">
+                        <button type="button" onClick={() => setCalendarOpen(true)}>
+                          Add to calendar
+                        </button>
+                      </div>
+                    </>
                   ) : null}
 
                   {renderActionPanel()}
