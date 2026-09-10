@@ -122,6 +122,24 @@ export function cloneTemplateToSteps(template: FlowTemplate): ExcerptStep[] {
 }
 
 /**
+ * The template as un-started steps, for showing the flow before the student has
+ * highlighted anything. Unlike `cloneTemplateToSteps` this starts no clock and
+ * marks nothing active, so every course page shows the same shape whether or
+ * not it has excerpts yet.
+ */
+export function previewStepsFromTemplate(template: FlowTemplate): ExcerptStep[] {
+  return template.steps.map((s) => ({
+    id: s.id,
+    action: s.action,
+    status: "pending",
+    gate: s.gate,
+    on_fail: s.on_fail,
+    started_at: null,
+    metrics: { elapsed_ms: 0, attempts: 0 },
+  }));
+}
+
+/**
  * Typical focus time per step, in seconds. Used as the yardstick for effort:
  * taking much longer than this is the main signal that a step was hard.
  */

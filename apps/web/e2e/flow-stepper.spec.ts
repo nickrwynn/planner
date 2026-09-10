@@ -94,3 +94,52 @@ test("flow track shows done, active and pending states", async ({ page }) => {
 
   await page.locator(".flowStepper").screenshot({ path: "test-results/flow-stepper.png" });
 });
+
+const PREVIEW_ITEMS = STEPS.map(
+  (s, i) => `<li class="flowStep is-pending"><button type="button" disabled>
+    <span class="flowStepIndex">${i + 1}</span>
+    <span class="flowStepLabel">${s.label}</span>
+  </button></li>`
+).join("");
+
+const PREVIEW_HARNESS = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #f3f4f6; }
+${CSS}
+</style></head>
+<body>
+  <nav class="flowStepper" id="live"><ol class="flowStepperTrack">${items}</ol></nav>
+  <nav class="flowStepper is-preview" id="preview"><ol class="flowStepperTrack">${PREVIEW_ITEMS}</ol></nav>
+</body></html>`;
+
+test("preview track is visible but reads as not started", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.setContent(PREVIEW_HARNESS);
+
+  // A course with no excerpts still shows the whole flow.
+  const preview = page.locator("#preview");
+  await expect(preview).toBeVisible();
+  await expect(preview.locator(".flowStep")).toHaveCount(9);
+  await expect(preview.locator(".flowStep.is-active")).toHaveCount(0);
+
+  const [previewOpacity, liveOpacity] = await page.evaluate(() => [
+    getComputedStyle(document.querySelector("#preview")!).opacity,
+    getComputedStyle(document.querySelector("#live")!).opacity,
+  ]);
+  expect(Number(previewOpacity)).toBeLessThan(Number(liveOpacity));
+
+  const border = await page.evaluate(
+    () => getComputedStyle(document.querySelector("#preview .flowStep button")!).borderStyle
+  );
+  expect(border).toBe("dashed");
+
+  // Still a single horizontal line, matching the live track.
+  const tops = await page.evaluate(() =>
+    Array.from(document.querySelectorAll("#preview .flowStep button")).map((el) =>
+      Math.round(el.getBoundingClientRect().top)
+    )
+  );
+  expect(new Set(tops).size).toBe(1);
+
+  await preview.screenshot({ path: "test-results/flow-stepper-preview.png" });
+});

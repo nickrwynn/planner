@@ -12,6 +12,8 @@ type StudyFlowStepperProps = {
   steps: ExcerptStep[];
   activeIndex: number;
   onSelect: (index: number) => void;
+  /** Preview mode: the flow is shown but no excerpt exists to run it against. */
+  disabled?: boolean;
 };
 
 /** Short labels keep the strip readable when a flow has many steps. */
@@ -31,11 +33,14 @@ const SHORT_LABELS: Record<string, string> = {
  * is green, and upcoming steps are plain. Each finished step carries its
  * effort rating and the time it took.
  */
-export function StudyFlowStepper({ steps, activeIndex, onSelect }: StudyFlowStepperProps) {
+export function StudyFlowStepper({ steps, activeIndex, onSelect, disabled }: StudyFlowStepperProps) {
   if (!steps.length) return null;
 
   return (
-    <nav className="flowStepper" aria-label="Study flow progress">
+    <nav
+      className={`flowStepper${disabled ? " is-preview" : ""}`}
+      aria-label="Study flow progress"
+    >
       <ol className="flowStepperTrack">
         {steps.map((step, index) => {
           const metrics = stepMetrics(step);
@@ -56,11 +61,14 @@ export function StudyFlowStepper({ steps, activeIndex, onSelect }: StudyFlowStep
               <button
                 type="button"
                 onClick={() => onSelect(index)}
+                disabled={disabled}
                 aria-current={isActive ? "step" : undefined}
                 title={
-                  rating
-                    ? `${actionLabel(step.action)} — ${rating}, ${formatDuration(metrics.elapsed_ms)}`
-                    : actionLabel(step.action)
+                  disabled
+                    ? `${actionLabel(step.action)} — highlight a passage to start`
+                    : rating
+                      ? `${actionLabel(step.action)} — ${rating}, ${formatDuration(metrics.elapsed_ms)}`
+                      : actionLabel(step.action)
                 }
               >
                 <span className="flowStepIndex">{index + 1}</span>

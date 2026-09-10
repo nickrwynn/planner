@@ -1682,6 +1682,16 @@ html.agentCollapsed .appShell {
   color: var(--danger-fg);
 }
 
+/* The flow before anything is highlighted: visible, but plainly not running. */
+.flowStepper.is-preview {
+  opacity: 0.65;
+}
+
+.flowStepper.is-preview .flowStep button {
+  cursor: default;
+  border-style: dashed;
+}
+
 .flowStepIndex {
   font-variant-numeric: tabular-nums;
   opacity: 0.7;

@@ -23,6 +23,7 @@ import {
   DEFAULT_FLOW_TEMPLATE,
   deriveDifficulty,
   loadTemplate,
+  previewStepsFromTemplate,
   retimeSteps,
   saveTemplateLocal,
   stepMetrics,
@@ -149,6 +150,21 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
   const activeStep: ExcerptStep | null = activeExcerpt
     ? activeExcerpt.steps[activeExcerpt.cursor_step_index] || null
     : null;
+
+  // Shown until the first highlight so the page has the same shape on every
+  // course: the flow track and the effort card, both empty rather than absent.
+  const previewSteps = useMemo(() => previewStepsFromTemplate(template), [template]);
+  const previewExcerpt = useMemo<StudyExcerpt>(
+    () => ({
+      id: "preview",
+      text: "",
+      page,
+      steps: previewSteps,
+      cursor_step_index: 0,
+      created_at: new Date(0).toISOString(),
+    }),
+    [previewSteps, page]
+  );
 
   const progressSummary = useMemo(() => {
     const doneExcerpts = excerpts.filter((e) => e.steps.every((s) => s.status === "done")).length;
@@ -1349,13 +1365,12 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                 ) : null}
               </div>
 
-              {activeExcerpt ? (
-                <StudyFlowStepper
-                  steps={activeExcerpt.steps}
-                  activeIndex={activeExcerpt.cursor_step_index}
-                  onSelect={selectStep}
-                />
-              ) : null}
+              <StudyFlowStepper
+                steps={activeExcerpt ? activeExcerpt.steps : previewSteps}
+                activeIndex={activeExcerpt ? activeExcerpt.cursor_step_index : -1}
+                onSelect={selectStep}
+                disabled={!activeExcerpt}
+              />
 
               {findOpen ? (
                 <div>
@@ -1505,20 +1520,21 @@ export default function CourseStudyFlowsPage({ params }: { params: { id: string 
                 )}
 
                 <aside className="studySidePane">
-                  {activeExcerpt ? (
-                    <>
-                      <StudyMetrics
-                        excerpt={activeExcerpt}
-                        activeStep={activeStep}
-                        onRateStep={rateStep}
-                      />
-                      <div className="studySideCard">
-                        <button type="button" onClick={() => setCalendarOpen(true)}>
-                          Add to calendar
-                        </button>
-                      </div>
-                    </>
-                  ) : null}
+                  <StudyMetrics
+                    excerpt={activeExcerpt ?? previewExcerpt}
+                    activeStep={activeExcerpt ? activeStep : null}
+                    onRateStep={rateStep}
+                  />
+                  <div className="studySideCard">
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOpen(true)}
+                      disabled={!activeExcerpt}
+                      title={activeExcerpt ? undefined : "Highlight a passage first"}
+                    >
+                      Add to calendar
+                    </button>
+                  </div>
 
                   {renderActionPanel()}
                 </aside>

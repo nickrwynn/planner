@@ -5,6 +5,7 @@ import {
   effectiveDifficulty,
   excerptEffort,
   formatDuration,
+  previewStepsFromTemplate,
   retimeSteps,
   type ExcerptStep,
   type StudyExcerpt,
@@ -200,6 +201,46 @@ test.describe("excerpt rollup", () => {
       step({ id: "b", action: "summarize", status: "pending" }),
     ]);
     expect(excerptEffort(slow).remainingMinutes).toBeGreaterThan(5);
+  });
+});
+
+test.describe("flow preview", () => {
+  const template = {
+    steps: [
+      { id: "t1", action: "comment" as const },
+      { id: "t2", action: "summarize" as const, gate: true },
+      { id: "t3", action: "quiz" as const, on_fail: "restart_sequence" as const },
+    ],
+  };
+
+  test("template preview starts nothing", () => {
+    const steps = previewStepsFromTemplate(template);
+
+    expect(steps.map((s) => s.action)).toEqual(["comment", "summarize", "quiz"]);
+    // Nothing is active and no clock is running, so an untouched course page
+    // can show the flow without recording time against it.
+    expect(steps.every((s) => s.status === "pending")).toBe(true);
+    expect(steps.every((s) => s.started_at === null)).toBe(true);
+    expect(steps.every((s) => (s.metrics?.attempts ?? 0) === 0)).toBe(true);
+    expect(steps.every((s) => (s.metrics?.elapsed_ms ?? 0) === 0)).toBe(true);
+  });
+
+  test("preview keeps gate settings so the track matches the real flow", () => {
+    const steps = previewStepsFromTemplate(template);
+    expect(steps[1].gate).toBe(true);
+    expect(steps[2].on_fail).toBe("restart_sequence");
+  });
+
+  test("an empty preview excerpt reports an estimate but no measurements", () => {
+    const effort = excerptEffort(excerpt(previewStepsFromTemplate(template)));
+
+    expect(effort.doneSteps).toBe(0);
+    expect(effort.totalSteps).toBe(3);
+    expect(effort.totalMs).toBe(0);
+    expect(effort.masteryPct).toBeNull();
+    expect(effort.comprehensionPct).toBeNull();
+    // The remaining estimate still works, which is what makes the empty card useful.
+    expect(effort.remainingMinutes).toBeGreaterThan(0);
   });
 });
 
