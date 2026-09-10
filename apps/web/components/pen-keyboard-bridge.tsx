@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { recognizeHandwriting } from "../lib/handwriting-recognize";
+import { planInsertion, spliceText, type InsertionSpan } from "../lib/pen-insert";
 import { InkPad } from "./ink-pad";
 
 export type InputMode = "auto" | "pen" | "keyboard";
@@ -39,21 +40,28 @@ function isEditable(el: EventTarget | null): el is HTMLInputElement | HTMLTextAr
   return false;
 }
 
-function insertText(el: HTMLInputElement | HTMLTextAreaElement, text: string) {
-  const start = el.selectionStart ?? el.value.length;
-  const end = el.selectionEnd ?? el.value.length;
-  const next = `${el.value.slice(0, start)}${text}${el.value.slice(end)}`;
+/**
+ * Write into a field without focusing it.
+ *
+ * Focus is deliberately not taken: on iPadOS, focusing a text field raises the
+ * on-screen keyboard, which is exactly what the pen flow is meant to avoid.
+ * React is notified through the native value setter plus an input event.
+ */
+function writeValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+  caret: number
+) {
   const nativeSetter = Object.getOwnPropertyDescriptor(
     el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
     "value"
   )?.set;
-  nativeSetter?.call(el, next);
+  nativeSetter?.call(el, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
-  const caret = start + text.length;
   try {
     el.setSelectionRange(caret, caret);
   } catch {
-    // ignore
+    // Fields that don't support selection ranges, e.g. type="email".
   }
 }
 
@@ -69,7 +77,8 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<InputMode>("auto");
   const [penSheetOpen, setPenSheetOpen] = useState(false);
   const targetRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
-  const lastPointerType = useRef<string>("touch");
+  /** What the last recognition pass wrote, so the next pass can refine it. */
+  const spanRef = useRef<InsertionSpan | null>(null);
 
   useEffect(() => {
     try {
@@ -92,14 +101,17 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
 
   const openPenSheet = useCallback((target?: HTMLInputElement | HTMLTextAreaElement | null) => {
     if (target) targetRef.current = target;
+    spanRef.current = null;
     setPenSheetOpen(true);
   }, []);
 
-  const closePenSheet = useCallback(() => setPenSheetOpen(false), []);
+  const closePenSheet = useCallback(() => {
+    spanRef.current = null;
+    setPenSheetOpen(false);
+  }, []);
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
-      lastPointerType.current = e.pointerType || "touch";
       const target = e.target;
       if (!(target instanceof Element)) return;
       if (target.closest(".penBridgeSheet") || target.closest(".studyInkPad") || target.closest(".studyInkCanvas")) {
@@ -122,6 +134,13 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
         mode === "pen" || (mode === "auto" && e.pointerType === "pen");
 
       if (wantPen) {
+        // Without this the browser focuses the field it just heard a tap on,
+        // and iPadOS raises the keyboard over the ink sheet.
+        e.preventDefault();
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        if (targetRef.current !== editable) spanRef.current = null;
         targetRef.current = editable;
         setPenSheetOpen(true);
       } else if (mode === "auto" && e.pointerType === "touch") {
@@ -136,16 +155,29 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [mode]);
 
-  const onRecognize = useCallback(async (imageBase64: string, recognizeMode: "text" | "math") => {
-    const res = await recognizeHandwriting(imageBase64, recognizeMode);
-    const text = (recognizeMode === "math" && res.latex ? res.latex : res.text || "").trim();
-    if (!text) return;
-    const el = targetRef.current;
-    if (el && document.contains(el)) {
-      el.focus();
-      insertText(el, text + (text.endsWith("\n") ? "" : " "));
-    }
-  }, []);
+  const onRecognize = useCallback(
+    async (imageBase64: string, recognizeMode: "text" | "math", session: number) => {
+      const res = await recognizeHandwriting(imageBase64, recognizeMode);
+      const text = (recognizeMode === "math" && res.latex ? res.latex : res.text || "").trim();
+      if (!text) return;
+      const el = targetRef.current;
+      if (!el || !document.contains(el)) return;
+
+      // Each pass re-reads all the ink on the pad, so a pass belonging to the
+      // same ink session overwrites what the last one wrote. Appending instead
+      // would turn "cat" into "c ca cat".
+      const caret = {
+        start: el.selectionStart ?? el.value.length,
+        end: el.selectionEnd ?? el.value.length,
+      };
+      const plan = planInsertion(spanRef.current, session, caret);
+      const addition = text.endsWith("\n") ? text : `${text} `;
+      const { value, span } = spliceText(el.value, plan, addition);
+      writeValue(el, value, span.end);
+      spanRef.current = { session, ...span };
+    },
+    []
+  );
 
   const value = useMemo(
     () => ({ mode, setMode, penSheetOpen, openPenSheet, closePenSheet }),

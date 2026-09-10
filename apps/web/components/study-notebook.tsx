@@ -1,14 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { cropInkToDataUrl, growBounds, type InkBounds } from "../lib/ink-crop";
 import type { StudyExcerpt } from "../lib/studyflow-actions";
 
 export type PaperStyle = "notebook" | "printer";
 
 /** Distance between ruled lines, in px. Text line-height matches this. */
 const RULE = 28;
-/** Pause after the pencil lifts before ink is recognized. */
-const RECOGNIZE_IDLE_MS = 400;
+/**
+ * Pause after the pencil lifts before ink is recognized. Long enough to clear
+ * the natural gaps between letters, so recognition sees whole words.
+ */
+const RECOGNIZE_IDLE_MS = 700;
 const MIN_ROWS = 10;
 
 type StudyNotebookProps = {
@@ -51,6 +55,8 @@ export function StudyNotebook({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const drawing = useRef(false);
   const hasInkRef = useRef(false);
+  const inkBounds = useRef<InkBounds | null>(null);
+  const dprRef = useRef(1);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mode, setMode] = useState<"text" | "math">("text");
   const [writing, setWriting] = useState(false);
@@ -68,6 +74,7 @@ export function StudyNotebook({
     const rect = surface.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return;
     const dpr = window.devicePixelRatio || 1;
+    dprRef.current = dpr;
     canvas.width = Math.floor(rect.width * dpr);
     canvas.height = Math.floor(rect.height * dpr);
     const ctx = canvas.getContext("2d");
@@ -103,6 +110,7 @@ export function StudyNotebook({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
     hasInkRef.current = false;
+    inkBounds.current = null;
   }
 
   /** Insert recognized text at the caret so writing continues where you were. */
@@ -134,18 +142,13 @@ export function StudyNotebook({
     if (!canvas || !hasInkRef.current || inkDisabled || busy) return;
     setBusy(true);
     try {
-      // Flatten onto white: recognition expects dark ink on a light page.
-      const flat = document.createElement("canvas");
-      flat.width = canvas.width;
-      flat.height = canvas.height;
-      const fctx = flat.getContext("2d");
-      if (!fctx) return;
-      fctx.fillStyle = "#ffffff";
-      fctx.fillRect(0, 0, flat.width, flat.height);
-      fctx.drawImage(canvas, 0, 0);
-
-      const dataUrl = flat.toDataURL("image/jpeg", 0.82);
-      const base64 = dataUrl.split(",", 1)[1] || dataUrl;
+      const ink = inkBounds.current;
+      if (!ink) return;
+      // Crop to the writing and flatten onto white: recognition expects dark
+      // ink on a light page, and a word alone on a full page reads poorly.
+      const dataUrl = cropInkToDataUrl(canvas, ink, dprRef.current, 2);
+      if (!dataUrl) return;
+      const base64 = dataUrl.split(",")[1] || dataUrl;
       const recognized = await onRecognizeInk(base64, modeRef.current);
       if (recognized?.trim()) {
         insertAtCaret(recognized.trim());
@@ -180,6 +183,7 @@ export function StudyNotebook({
     drawing.current = true;
     setWriting(true);
     const { x, y } = pointAt(e);
+    inkBounds.current = growBounds(inkBounds.current, x, y);
     ctx.beginPath();
     ctx.moveTo(x, y);
     try {
@@ -195,6 +199,7 @@ export function StudyNotebook({
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
     const { x, y } = pointAt(e);
+    inkBounds.current = growBounds(inkBounds.current, x, y);
     ctx.lineTo(x, y);
     ctx.stroke();
     hasInkRef.current = true;

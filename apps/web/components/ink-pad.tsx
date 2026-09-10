@@ -1,56 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { cropInkToDataUrl, growBounds, type InkBounds } from "../lib/ink-crop";
+
 type InkPadProps = {
   disabled?: boolean;
   penOnly?: boolean;
-  onRecognize: (imageBase64: string, mode: "text" | "math") => Promise<void>;
+  onRecognize: (imageBase64: string, mode: "text" | "math", session: number) => Promise<void>;
 };
 
-function cropInkDataUrl(canvas: HTMLCanvasElement): string {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return canvas.toDataURL("image/jpeg", 0.85);
-  const { width, height } = canvas;
-  const image = ctx.getImageData(0, 0, width, height);
-  const data = image.data;
-  let minX = width;
-  let minY = height;
-  let maxX = 0;
-  let maxY = 0;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const i = (y * width + x) * 4;
-      // Non-white ink pixels
-      if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) {
-        if (x < minX) minX = x;
-        if (y < minY) minY = y;
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX < minX || maxY < minY) {
-    return canvas.toDataURL("image/jpeg", 0.85);
-  }
-  const pad = 12;
-  minX = Math.max(0, minX - pad);
-  minY = Math.max(0, minY - pad);
-  maxX = Math.min(width - 1, maxX + pad);
-  maxY = Math.min(height - 1, maxY + pad);
-  const w = maxX - minX + 1;
-  const h = maxY - minY + 1;
-  const out = document.createElement("canvas");
-  const maxSide = 640;
-  const scale = Math.min(1, maxSide / Math.max(w, h));
-  out.width = Math.max(1, Math.round(w * scale));
-  out.height = Math.max(1, Math.round(h * scale));
-  const octx = out.getContext("2d");
-  if (!octx) return canvas.toDataURL("image/jpeg", 0.85);
-  octx.fillStyle = "#ffffff";
-  octx.fillRect(0, 0, out.width, out.height);
-  octx.drawImage(canvas, minX, minY, w, h, 0, 0, out.width, out.height);
-  return out.toDataURL("image/jpeg", 0.82);
-}
+/**
+ * How long the pen must rest before recognition runs.
+ *
+ * Pauses between letters are routine, so a short delay fires mid-word and
+ * recognises half a word. This waits for a real word or phrase boundary.
+ */
+const IDLE_MS = 700;
 
 export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -63,6 +28,11 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
   const [busy, setBusy] = useState(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const bounds = useRef<InkBounds | null>(null);
+  const dprRef = useRef(1);
+  const strokeWidth = useRef(2.5);
+  /** Identifies one batch of ink, so repeat passes refine instead of appending. */
+  const session = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -70,6 +40,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
+    dprRef.current = dpr;
     const rect = canvas.getBoundingClientRect();
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
@@ -91,11 +62,16 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
+  /** Grow the ink bounding box as the pen moves, so cropping stays O(1). */
+  function noteInk(x: number, y: number) {
+    bounds.current = growBounds(bounds.current, x, y);
+  }
+
   function scheduleAutoRecognize() {
     if (idleTimer.current) clearTimeout(idleTimer.current);
     idleTimer.current = setTimeout(() => {
       void recognize({ auto: true });
-    }, 120);
+    }, IDLE_MS);
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -108,6 +84,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     canvas.setPointerCapture(e.pointerId);
     drawing.current = true;
     const { x, y } = pointerPos(e);
+    noteInk(x, y);
     ctx.beginPath();
     ctx.moveTo(x, y);
   }
@@ -117,6 +94,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
     const { x, y } = pointerPos(e);
+    noteInk(x, y);
     ctx.lineTo(x, y);
     ctx.stroke();
     hasInkRef.current = true;
@@ -133,6 +111,10 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     scheduleAutoRecognize();
   }
 
+  /**
+   * Wipe the pad and start a new ink session, so the next result is added to
+   * the field rather than replacing what this ink already produced.
+   */
   function clear() {
     if (idleTimer.current) clearTimeout(idleTimer.current);
     const canvas = canvasRef.current;
@@ -141,23 +123,34 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
     const rect = canvas.getBoundingClientRect();
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, rect.width, rect.height);
+    bounds.current = null;
     hasInkRef.current = false;
     setHasInk(false);
+    session.current += 1;
   }
 
   async function recognize(opts?: { auto?: boolean }) {
     const canvas = canvasRef.current;
     if (!canvas || !hasInkRef.current || disabled) return;
     if (busy && opts?.auto) return;
+    const ink = bounds.current;
+    if (!ink) return;
     const seq = ++recognizeSeq.current;
     setBusy(true);
     try {
-      const dataUrl = cropInkDataUrl(canvas);
-      const base64 = dataUrl.split(",", 1)[1] || dataUrl;
-      await onRecognize(base64, modeRef.current);
+      const dataUrl = cropInkToDataUrl(canvas, ink, dprRef.current, strokeWidth.current);
+      if (!dataUrl) return;
+      const base64 = dataUrl.split(",")[1] || dataUrl;
+      await onRecognize(base64, modeRef.current, session.current);
     } finally {
       if (seq === recognizeSeq.current) setBusy(false);
     }
+  }
+
+  /** Accept what's on the pad and clear it, ready for the next phrase. */
+  async function commit() {
+    await recognize();
+    clear();
   }
 
   return (
@@ -194,15 +187,21 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
         onPointerCancel={onPointerUp}
       />
       <div className="studySideActions">
-        <button type="button" disabled={disabled || busy || !hasInk} onClick={() => void recognize()}>
-          {busy ? "Recognizing…" : "Recognize"}
+        <button
+          type="button"
+          disabled={disabled || busy || !hasInk}
+          onClick={() => void commit()}
+          title="Keep this text and clear the pad for the next phrase"
+        >
+          {busy ? "Recognizing…" : "Keep & clear"}
         </button>
         <button type="button" disabled={disabled} onClick={clear}>
           Clear
         </button>
       </div>
-      <div style={{ fontSize: 12, color: "#6b7280" }}>
-        Recognition runs automatically when you lift the pencil.
+      <div className="studySideMuted" style={{ fontSize: 12 }}>
+        Recognition runs a moment after you lift the pencil, and refines the same
+        text as you keep writing. Keep &amp; clear starts a new phrase.
       </div>
     </div>
   );

@@ -12,6 +12,21 @@ export type HandwritingResult = {
 };
 
 /**
+ * Accept either raw base64 or a full `data:` URL.
+ *
+ * Callers hand over whatever `toDataURL` gave them. The native plugin and the
+ * cloud endpoint both tolerate the prefix, but `atob` does not, so leaving it
+ * on made the browser OCR path throw and every recognition fall through to the
+ * network.
+ */
+function toRawBase64(image: string): string {
+  const trimmed = image.trim();
+  if (!trimmed.startsWith("data:")) return trimmed;
+  const comma = trimmed.indexOf(",");
+  return comma === -1 ? trimmed : trimmed.slice(comma + 1);
+}
+
+/**
  * Recognition order:
  *  1. Apple Vision on-device (iPad app) — instant, no network, no API key.
  *     Math additionally runs our own layout engine to produce LaTeX.
@@ -19,9 +34,10 @@ export type HandwritingResult = {
  *  3. Cloud LLM — only when on-device came up empty and a key is configured.
  */
 export async function recognizeHandwriting(
-  imageBase64: string,
+  rawImage: string,
   mode: HandwritingMode
 ): Promise<HandwritingResult> {
+  const imageBase64 = toRawBase64(rawImage);
   if (mode === "math") {
     const latex = await recognizeMathOnDevice(imageBase64);
     if (latex) return { text: latex, latex, source: "device" };
