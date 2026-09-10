@@ -504,6 +504,9 @@ def _dedupe_course_resources_by_content(db: Session, *, user: User, course_id) -
                 Resource.user_id == user.id,
                 Resource.course_id == course_id,
                 Resource.content_sha256.is_not(None),
+                # Attachments are deliberately many-per-page; only the top-level
+                # rows are candidates for collapsing.
+                Resource.parent_resource_id.is_(None),
                 Resource.source_type.in_(
                     ("canvas_file", "canvas_page", "canvas_syllabus", "canvas_module_item")
                 ),
@@ -553,6 +556,9 @@ def _dedupe_course_resources_by_module_item(db: Session, *, user: User, course_i
             select(Resource).where(
                 Resource.user_id == user.id,
                 Resource.course_id == course_id,
+                # A page's attachments all share its module item id, so without
+                # this they would all collapse into one and be deleted.
+                Resource.parent_resource_id.is_(None),
                 Resource.source_type.in_(
                     ("canvas_file", "canvas_page", "canvas_syllabus", "canvas_module_item")
                 ),
@@ -693,6 +699,23 @@ def _guess_mime(filename: str | None, content_type: str | None) -> str | None:
         if filename.lower().endswith(".pdf"):
             return "application/pdf"
     return mime if mime and mime.startswith("text/") else None
+
+
+_DOCUMENT_MIME_HINTS = ("pdf", "epub", "msword", "officedocument", "powerpoint", "excel", "rtf")
+_DOCUMENT_SUFFIXES = (".pdf", ".epub", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".rtf")
+
+
+def _is_document(resource: Resource) -> bool:
+    """A readable document, as opposed to an image embedded for decoration.
+
+    Canvas pages routinely embed screenshots and banners. Those are worth
+    keeping as attachments but must never stand in for the page itself.
+    """
+    mime = (resource.mime_type or "").lower()
+    if any(hint in mime for hint in _DOCUMENT_MIME_HINTS):
+        return True
+    name = (resource.original_filename or "").lower()
+    return name.endswith(_DOCUMENT_SUFFIXES)
 
 
 def _enqueue_resource_index(
@@ -1026,8 +1049,14 @@ def _upsert_files_from_html(
     module_item: dict | None,
     seen_file_ids: set[str] | None,
     meta_extra: dict | None = None,
+    parent: Resource | None = None,
 ) -> list[Resource]:
-    """Download Canvas file embeds/links from HTML; return successfully stored resources."""
+    """Download Canvas file embeds/links from HTML; return successfully stored resources.
+
+    When `parent` is given, each attachment is nested under it so the course
+    resource list mirrors Canvas rather than listing every embedded image
+    alongside real study material.
+    """
     embedded: list[Resource] = []
     file_ids = extract_canvas_file_ids_from_html(html)
     for idx, file_id in enumerate(file_ids[:8]):
@@ -1056,6 +1085,10 @@ def _upsert_files_from_html(
                     meta = dict(existing_file.metadata_json or {})
                     meta.update({k: v for k, v in meta_extra.items() if v is not None})
                     existing_file.metadata_json = meta
+                # Re-parent rows created by earlier syncs, which is what pulls
+                # already-imported attachments out of the top-level list.
+                if parent is not None and existing_file.id != parent.id:
+                    existing_file.parent_resource_id = parent.id
                 db.add(existing_file)
                 embedded.append(existing_file)
             continue
@@ -1091,6 +1124,8 @@ def _upsert_files_from_html(
             meta = dict(res.metadata_json or {})
             meta.update({k: v for k, v in meta_extra.items() if v is not None})
             res.metadata_json = meta
+        if parent is not None and res.id != parent.id:
+            res.parent_resource_id = parent.id
         db.add(res)
         embedded.append(res)
     return embedded
@@ -1158,7 +1193,16 @@ def _upsert_canvas_module_item_resource(
         return None
     # Prefer a PDF when the assignment embeds several files.
     pdfs = [r for r in embedded if (r.mime_type or "").lower().endswith("pdf") or "pdf" in (r.mime_type or "").lower()]
-    return (pdfs or embedded)[0]
+    primary = (pdfs or embedded)[0]
+    # The chosen file represents the module item; the rest are its attachments.
+    for extra in embedded:
+        if extra.id != primary.id:
+            extra.parent_resource_id = primary.id
+            db.add(extra)
+    primary.parent_resource_id = None
+    db.add(primary)
+    db.flush()
+    return primary
 
 
 def _upsert_canvas_page_resource(
@@ -1199,8 +1243,40 @@ def _upsert_canvas_page_resource(
         .first()
     )
 
-    # 1) Download any files embedded/linked in the page HTML (common for PDF viewers).
     file_ids = extract_canvas_file_ids_from_html(body)
+
+    # The page is the item the student sees, matching Canvas' own navigation.
+    # It has to exist before the embeds are imported so each attachment can be
+    # nested under it instead of landing in the course's top-level list.
+    page_resource = existing
+    created_page = False
+    if page_resource is None:
+        page_resource = Resource(
+            user_id=user.id,
+            course_id=course.id,
+            title=page_title,
+            resource_type="page",
+            mime_type="text/plain",
+            source_type="canvas_page",
+            source_ref=source_ref,
+            parse_status="uploaded",
+            ocr_status="pending",
+            index_status="pending",
+            lifecycle_state="uploaded",
+            metadata_json={"page_url": str(page_url), "embedded_file_ids": file_ids},
+        )
+        db.add(page_resource)
+        db.flush()
+        created_page = True
+        record_resource_event(
+            db,
+            resource=page_resource,
+            event_type="resource.uploaded",
+            to_state=page_resource.lifecycle_state,
+            details={"source": "canvas_page"},
+        )
+
+    # 1) Download any files embedded/linked in the page HTML (common for PDF viewers).
     embedded_resources = _upsert_files_from_html(
         db,
         redis=redis,
@@ -1214,40 +1290,56 @@ def _upsert_canvas_page_resource(
         module_id=None,
         module_item=module_item,
         seen_file_ids=seen_file_ids,
+        parent=page_resource,
     )
 
     text = _strip_html(body)
-    # Always prefer real PDF/file bytes when the page embeds them — never keep page.txt
-    # alongside (or instead of) the duplicate of the module PDF.
-    if embedded_resources:
+    # Promote real document bytes onto the page so "Syllabus" opens the syllabus
+    # PDF itself rather than a text mirror of the page. Screenshots don't count:
+    # a page whose only embeds are images keeps its own prose and nests them.
+    documents = [r for r in embedded_resources if _is_document(r)]
+    if documents:
         pdfs = [
             r
-            for r in embedded_resources
+            for r in documents
             if "pdf" in (r.mime_type or "").lower() or (r.original_filename or "").lower().endswith(".pdf")
         ]
-        primary = (pdfs or embedded_resources)[0]
-        _apply_canvas_module_meta(primary, module_name=module_name, module_position=module_position)
-        db.add(primary)
-        if existing is not None and existing.id != primary.id:
+        primary = (pdfs or documents)[0]
+        if primary.id != page_resource.id:
             _copy_storage_onto_page_resource(
                 db,
                 redis=redis,
                 user=user,
-                page_resource=existing,
+                page_resource=page_resource,
                 file_resource=primary,
                 page_title=page_title,
                 embedded_file_ids=file_ids,
             )
-            _apply_canvas_module_meta(existing, module_name=module_name, module_position=module_position)
-            db.add(existing)
-            # Drop the duplicate canvas_file row created for the same bytes.
+            # The bytes now live on the page row, so the separate file row for
+            # the same content would be a duplicate of its own parent.
             db.delete(primary)
-            db.flush()
-            return existing
-        return primary
+        _apply_canvas_module_meta(page_resource, module_name=module_name, module_position=module_position)
+        db.add(page_resource)
+        db.flush()
+        return page_resource
 
     if not text:
+        if embedded_resources:
+            # An image-only page with no prose. Keep it as the container so its
+            # attachments still have something to nest under.
+            _apply_canvas_module_meta(
+                page_resource, module_name=module_name, module_position=module_position
+            )
+            db.add(page_resource)
+            db.flush()
+            return page_resource
+        # Nothing to show: no attachments and no readable body. Don't leave an
+        # empty row behind for a page we just created.
+        if created_page:
+            db.delete(page_resource)
+            db.flush()
         return None
+    resource = page_resource
 
     data = text.encode("utf-8")
     content_hash = hashlib.sha256(data).hexdigest()
@@ -1260,52 +1352,22 @@ def _upsert_canvas_page_resource(
     storage = get_storage_service(settings)
     filename = "page.txt"
 
-    if existing is None:
-        resource = Resource(
-            user_id=user.id,
-            course_id=course.id,
-            title=page_title,
-            resource_type="page",
-            original_filename=filename,
-            mime_type="text/plain",
-            source_type="canvas_page",
-            source_ref=source_ref,
-            parse_status="uploaded",
-            ocr_status="pending",
-            index_status="pending",
-            lifecycle_state="uploaded",
-            content_sha256=content_hash,
-            metadata_json={
-                "page_url": str(page_url),
-                "embedded_file_ids": file_ids,
-            },
-        )
-        db.add(resource)
-        db.flush()
-        record_resource_event(
-            db,
-            resource=resource,
-            event_type="resource.uploaded",
-            to_state=resource.lifecycle_state,
-            details={"source": "canvas_page"},
-        )
-    else:
-        resource = existing
-        resource.course_id = course.id
-        resource.title = page_title
-        resource.resource_type = "page"
-        resource.original_filename = filename
-        resource.mime_type = "text/plain"
-        resource.content_sha256 = content_hash
-        resource.parse_status = "uploaded"
-        resource.index_status = "pending"
-        resource.lifecycle_state = "uploaded"
-        meta = dict(resource.metadata_json or {})
-        meta["page_url"] = str(page_url)
-        meta["embedded_file_ids"] = file_ids
-        resource.metadata_json = meta
-        db.add(resource)
-        db.flush()
+    # The row already exists by this point — it was fetched or created above.
+    resource.course_id = course.id
+    resource.title = page_title
+    resource.resource_type = "page"
+    resource.original_filename = filename
+    resource.mime_type = "text/plain"
+    resource.content_sha256 = content_hash
+    resource.parse_status = "uploaded"
+    resource.index_status = "pending"
+    resource.lifecycle_state = "uploaded"
+    meta = dict(resource.metadata_json or {})
+    meta["page_url"] = str(page_url)
+    meta["embedded_file_ids"] = file_ids
+    resource.metadata_json = meta
+    db.add(resource)
+    db.flush()
 
     _apply_canvas_module_meta(resource, module_name=module_name, module_position=module_position)
     stored = storage.put_bytes(relative_path=f"{resource.id}/{filename}", data=data)

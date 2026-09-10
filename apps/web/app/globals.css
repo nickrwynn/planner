@@ -1422,6 +1422,39 @@ html.agentCollapsed .appShell {
   background: color-mix(in srgb, #0374b5 8%, var(--bg-elevated));
 }
 
+/* A module item plus the files that were embedded inside it. */
+.canvasModuleItemGroup {
+  border-top: 1px solid var(--border);
+}
+
+.canvasModuleItemGroup .canvasModuleItem {
+  border-top: 0;
+}
+
+.canvasAttachments {
+  padding: 0 12px 8px 50px;
+}
+
+.canvasAttachments > summary {
+  font-size: 12px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.canvasAttachment {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.canvasAttachment .canvasModuleItemIcon {
+  width: 20px;
+}
+
 .canvasModuleItemIcon {
   color: #0374b5;
   display: grid;

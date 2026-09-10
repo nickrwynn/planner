@@ -48,6 +48,7 @@ class ResourceRead(BaseModel):
     id: UUID
     user_id: UUID
     course_id: UUID | None
+    parent_resource_id: UUID | None = None
     title: str
     resource_type: str | None
     original_filename: str | None

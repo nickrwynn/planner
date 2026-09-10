@@ -72,6 +72,12 @@ class Resource(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         ForeignKey("courses.id", ondelete="SET NULL"), index=True, nullable=True
     )
 
+    # Set for files that were embedded in another resource, e.g. the PDFs and
+    # images attached to a Canvas page. Top-level resources leave this null.
+    parent_resource_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("resources.id", ondelete="SET NULL"), index=True, nullable=True
+    )
+
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     resource_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -94,6 +100,12 @@ class Resource(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     user = relationship("User")
     course = relationship("Course", back_populates="resources")
+    children = relationship(
+        "Resource",
+        back_populates="parent",
+        cascade="save-update",
+    )
+    parent = relationship("Resource", back_populates="children", remote_side=lambda: Resource.id)
     lifecycle_events = relationship(
         "ResourceLifecycleEvent",
         back_populates="resource",

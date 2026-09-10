@@ -36,6 +36,8 @@ export type Resource = {
   id: string;
   user_id: string;
   course_id: string | null;
+  /** Set when this file was embedded in another resource, e.g. a Canvas page. */
+  parent_resource_id?: string | null;
   title: string;
   resource_type?: string | null;
   original_filename?: string | null;

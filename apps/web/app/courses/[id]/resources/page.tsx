@@ -202,9 +202,30 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
     refresh();
   }, [refresh]);
 
+  /**
+   * Files that were embedded in another resource, keyed by their parent.
+   * A Canvas page like "Canvas Resources for Students" carries a dozen of
+   * these; they belong under the page, not beside it in the module list.
+   */
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, Resource[]>();
+    for (const r of resources) {
+      if (!r.parent_resource_id) continue;
+      const list = map.get(r.parent_resource_id) ?? [];
+      list.push(r);
+      map.set(r.parent_resource_id, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => a.title.localeCompare(b.title));
+    }
+    return map;
+  }, [resources]);
+
   const groupedResources = useMemo(() => {
     const groups = new Map<string, { position: number; items: Resource[] }>();
     for (const r of resources) {
+      // Attachments render nested under their parent instead of as siblings.
+      if (r.parent_resource_id) continue;
       const { name, position } = moduleMeta(r);
       const g = groups.get(name) || { position, items: [] };
       g.position = Math.min(g.position, position);
@@ -554,8 +575,9 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
                       const due = formatDue(meta.dueAt);
                       const href = meta.htmlUrl || `/resources/${r.id}`;
                       const external = Boolean(meta.htmlUrl);
+                      const attachments = childrenByParent.get(r.id) ?? [];
                       return (
-                        <div key={r.id} className="canvasModuleItem">
+                        <div key={r.id} className="canvasModuleItemGroup"><div className="canvasModuleItem">
                           <div className="canvasModuleItemIcon" data-kind={kind}>
                             <ResourceTypeIcon kind={kind} />
                           </div>
@@ -596,6 +618,31 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
                               Delete
                             </button>
                           </div>
+                          </div>
+                          {attachments.length > 0 ? (
+                            <details className="canvasAttachments">
+                              <summary>
+                                {attachments.length} attachment{attachments.length === 1 ? "" : "s"}
+                              </summary>
+                              {attachments.map((child) => {
+                                const childKind = resourceKind(child);
+                                const childStatus = statusLabel(child);
+                                return (
+                                  <div key={child.id} className="canvasAttachment">
+                                    <div className="canvasModuleItemIcon" data-kind={childKind}>
+                                      <ResourceTypeIcon kind={childKind} />
+                                    </div>
+                                    <Link className="canvasModuleItemTitle" href={`/resources/${child.id}`}>
+                                      {child.title}
+                                    </Link>
+                                    <span className={`canvasModuleStatus tone-${childStatus.tone}`}>
+                                      {childStatus.text}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </details>
+                          ) : null}
                         </div>
                       );
                     })}
