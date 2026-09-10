@@ -28,10 +28,14 @@ function toRawBase64(image: string): string {
 
 /**
  * Recognition order:
- *  1. Apple Vision on-device (iPad app) — instant, no network, no API key.
- *     Math additionally runs our own layout engine to produce LaTeX.
- *  2. Tesseract in the browser — on-device fallback for web.
- *  3. Cloud LLM — only when on-device came up empty and a key is configured.
+ *  1. Apple Vision on-device (iPad app) — instant, no network, no API key, and
+ *     trained on handwriting. Math additionally runs our own layout engine.
+ *  2. Cloud vision model — the accurate option in a plain browser.
+ *  3. Tesseract in the browser — offline last resort.
+ *
+ * Tesseract sits last on purpose. It is a printed-text engine trained on
+ * typeset fonts, so on handwriting it returns confident nonsense; it is only
+ * worth using when there is no better option available at all.
  */
 export async function recognizeHandwriting(
   rawImage: string,
@@ -48,18 +52,7 @@ export async function recognizeHandwriting(
     return { text: device, source: "device" };
   }
 
-  let local = "";
-  if (mode === "text" && !canRecognizeOnDevice()) {
-    try {
-      local = await ocrInkImage(imageBase64);
-      if (local.length >= 1) {
-        return { text: local, source: "local" };
-      }
-    } catch {
-      // fall through to cloud
-    }
-  }
-
+  let cloudError: unknown = null;
   if (await isCloudAiAvailable()) {
     try {
       const { apiPost } = await import("./api");
@@ -70,9 +63,20 @@ export async function recognizeHandwriting(
       const text = (mode === "math" && res.latex ? res.latex : res.text || "").trim();
       if (text) return { text, latex: res.latex, source: "cloud" };
     } catch (err) {
-      if (!device && !local) throw err;
+      cloudError = err;
     }
   }
 
+  let local = "";
+  if (mode === "text" && !canRecognizeOnDevice()) {
+    try {
+      local = await ocrInkImage(imageBase64);
+      if (local) return { text: local, source: "local" };
+    } catch {
+      // Nothing left to try.
+    }
+  }
+
+  if (!device && !local && cloudError) throw cloudError;
   return { text: device || local || "", source: device ? "device" : "local" };
 }
