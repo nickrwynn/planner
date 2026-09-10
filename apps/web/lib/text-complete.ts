@@ -20,7 +20,12 @@ export type Completion = {
   source: CompletionSource;
 };
 
-const CLOUD_TIMEOUT_MS = 1200;
+/**
+ * Cursor Auto measures 3-7s end to end, so a short timeout would discard every
+ * answer. Suggestions are non-blocking and a stale one is dropped by the
+ * sequence guard, so waiting is safe — it just appears when it arrives.
+ */
+const CLOUD_TIMEOUT_MS = 9000;
 
 const EMPTY: Completion = { text: "", source: "none" };
 
