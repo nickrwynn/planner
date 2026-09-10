@@ -13,6 +13,8 @@ type GoogleStatus = {
   account_email?: string | null;
   account_name?: string | null;
   last_sync_error?: string | null;
+  /** What the server will actually send Google; must match Cloud Console. */
+  redirect_uri?: string | null;
 };
 
 type DriveFile = {
@@ -453,9 +455,21 @@ export default function CourseResourcesPage({ params }: { params: { id: string }
           </div>
         ) : (
           <div style={{ fontSize: 13, color: "#6b7280" }}>
-            {googleStatus?.oauth_configured === false
-              ? "Google OAuth is not configured yet. Add GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET to the server .env, set the redirect URI in Google Cloud Console to https://app.mystudyflow.app/backend/integrations/google/oauth/callback, then restart the API. Connect opens Google in an in-app/system browser."
-              : "Not connected — Connect opens Google sign-in in a browser window for authorization."}
+            {googleStatus?.oauth_configured === false ? (
+              <>
+                Google OAuth is not configured yet. Add GOOGLE_OAUTH_CLIENT_ID and
+                GOOGLE_OAUTH_CLIENT_SECRET to the server .env, then restart the API. In Google
+                Cloud Console the authorized redirect URI must be exactly:
+                <div>
+                  <code style={{ fontSize: 12, wordBreak: "break-all" }}>
+                    {googleStatus.redirect_uri || "(server has no redirect URI configured)"}
+                  </code>
+                </div>
+                Connect opens Google in an in-app/system browser.
+              </>
+            ) : (
+              "Not connected — Connect opens Google sign-in in a browser window for authorization."
+            )}
           </div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
