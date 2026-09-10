@@ -1,5 +1,6 @@
 import { isCloudAiAvailable } from "./ai-availability";
 import { canRecognizeOnDevice, recognizeOnDevice } from "./handwriting-native";
+import { recordRecognition } from "./ink-diagnostics";
 import { recognizeMathOnDevice } from "./math/recognize-math";
 import { ocrInkImage } from "./scan-ocr";
 
@@ -41,7 +42,33 @@ export async function recognizeHandwriting(
   rawImage: string,
   mode: HandwritingMode
 ): Promise<HandwritingResult> {
+  const started = Date.now();
   const imageBase64 = toRawBase64(rawImage);
+  const record = (engine: string, text: string, error?: string) =>
+    recordRecognition({
+      mode,
+      engine,
+      ms: Date.now() - started,
+      text,
+      imageDataUrl: `data:image/png;base64,${imageBase64}`,
+      imageBytes: Math.round((imageBase64.length * 3) / 4),
+      error: error ?? null,
+    });
+
+  try {
+    const result = await recognizeWith(imageBase64, mode);
+    record(result.source, result.text);
+    return result;
+  } catch (err) {
+    record("failed", "", err instanceof Error ? err.message : String(err));
+    throw err;
+  }
+}
+
+async function recognizeWith(
+  imageBase64: string,
+  mode: HandwritingMode
+): Promise<HandwritingResult> {
   if (mode === "math") {
     const latex = await recognizeMathOnDevice(imageBase64);
     if (latex) return { text: latex, latex, source: "device" };

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { HandwritingResult } from "../lib/handwriting-recognize";
 import { cropInkToDataUrl, growBounds, type InkBounds } from "../lib/ink-crop";
+import { recordPointer } from "../lib/ink-diagnostics";
+import { InkDiagnostics } from "./ink-diagnostics";
 
 type RecognitionSource = HandwritingResult["source"];
 
@@ -95,6 +97,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
 
   function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     if (disabled) return;
+    recordPointer({ type: e.pointerType, pressure: e.pressure, surface: "ink pad" });
     if (penOnly && e.pointerType === "touch") return;
     if (idleTimer.current) clearTimeout(idleTimer.current);
     const canvas = canvasRef.current;
@@ -224,6 +227,7 @@ export function InkPad({ disabled, penOnly, onRecognize }: InkPadProps) {
         text as you keep writing. Keep &amp; clear starts a new phrase.
         {source ? ` Read by: ${SOURCE_LABELS[source]}.` : ""}
       </div>
+      <InkDiagnostics />
     </div>
   );
 }

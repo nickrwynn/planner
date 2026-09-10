@@ -198,3 +198,57 @@ test.describe("pen sheet layout", () => {
     expect(touchAction).toBe("none");
   });
 });
+
+/**
+ * The keyboard guard makes the field readonly while the pencil is in use, since
+ * iPadOS ignores preventDefault when deciding to raise the keyboard. These pin
+ * down the two browser behaviours that approach depends on.
+ */
+test.describe("keyboard guard", () => {
+  test("a readonly field still accepts recognised text and caret moves", async ({ page }) => {
+    await page.setContent(`<textarea id="t" readonly>hello world</textarea>`);
+
+    const result = await page.evaluate(() => {
+      const el = document.querySelector<HTMLTextAreaElement>("#t")!;
+      el.value = "hello there world";
+      el.setSelectionRange(6, 11);
+      return { value: el.value, start: el.selectionStart, end: el.selectionEnd };
+    });
+
+    expect(result.value).toBe("hello there world");
+    expect(result.start).toBe(6);
+    expect(result.end).toBe(11);
+  });
+
+  test("a readonly field refuses typed input but an unguarded one takes it", async ({ page }) => {
+    await page.setContent(`<textarea id="guarded" readonly></textarea><textarea id="open"></textarea>`);
+
+    await page.locator("#guarded").click();
+    await page.keyboard.type("pencil");
+    expect(await page.locator("#guarded").inputValue()).toBe("");
+
+    await page.locator("#open").click();
+    await page.keyboard.type("finger");
+    expect(await page.locator("#open").inputValue()).toBe("finger");
+  });
+
+  test("clearing the guard during the tap lets a finger type immediately", async ({ page }) => {
+    // The release has to land in pointerdown: by focus time the browser has
+    // already decided whether to offer a keyboard for this tap.
+    await page.setContent(`
+      <textarea id="t" readonly></textarea>
+      <script>
+        const el = document.getElementById("t");
+        el.addEventListener("pointerdown", (e) => {
+          if (e.pointerType !== "pen") el.readOnly = false;
+        }, true);
+      </script>
+    `);
+
+    await page.locator("#t").click();
+    await page.keyboard.type("typed");
+
+    expect(await page.locator("#t").inputValue()).toBe("typed");
+    expect(await page.locator("#t").evaluate((el: HTMLTextAreaElement) => el.readOnly)).toBe(false);
+  });
+});

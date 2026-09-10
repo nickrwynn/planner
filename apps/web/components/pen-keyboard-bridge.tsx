@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { recognizeHandwriting } from "../lib/handwriting-recognize";
+import { recordPointer } from "../lib/ink-diagnostics";
 import { planInsertion, spliceText, type InsertionSpan } from "../lib/pen-insert";
 import { InkPad } from "./ink-pad";
 
@@ -79,6 +80,29 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
   const targetRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   /** What the last recognition pass wrote, so the next pass can refine it. */
   const spanRef = useRef<InsertionSpan | null>(null);
+  /** A field made readonly to keep the keyboard down, and its previous value. */
+  const guardRef = useRef<{
+    el: HTMLInputElement | HTMLTextAreaElement;
+    previous: boolean;
+  } | null>(null);
+
+  /**
+   * Keep the on-screen keyboard down without preventDefault, which iPadOS
+   * ignores for this purpose: it raises the keyboard from the synthesized tap,
+   * not from pointerdown. A readonly field is the reliable lever.
+   */
+  const blockKeyboard = useCallback((el: HTMLInputElement | HTMLTextAreaElement) => {
+    if (guardRef.current?.el === el) return;
+    guardRef.current = { el, previous: el.readOnly };
+    el.readOnly = true;
+  }, []);
+
+  const releaseKeyboard = useCallback(() => {
+    const guard = guardRef.current;
+    if (!guard) return;
+    guard.el.readOnly = guard.previous;
+    guardRef.current = null;
+  }, []);
 
   useEffect(() => {
     try {
@@ -96,8 +120,11 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
-    if (next === "keyboard") setPenSheetOpen(false);
-  }, []);
+    if (next === "keyboard") {
+      releaseKeyboard();
+      setPenSheetOpen(false);
+    }
+  }, [releaseKeyboard]);
 
   const openPenSheet = useCallback((target?: HTMLInputElement | HTMLTextAreaElement | null) => {
     if (target) targetRef.current = target;
@@ -107,13 +134,15 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
 
   const closePenSheet = useCallback(() => {
     spanRef.current = null;
+    releaseKeyboard();
     setPenSheetOpen(false);
-  }, []);
+  }, [releaseKeyboard]);
 
   useEffect(() => {
     function onPointerDown(e: PointerEvent) {
       const target = e.target;
       if (!(target instanceof Element)) return;
+      recordPointer({ type: e.pointerType, pressure: e.pressure, surface: "page" });
       if (target.closest(".penBridgeSheet") || target.closest(".studyInkPad") || target.closest(".studyInkCanvas")) {
         return;
       }
@@ -134,26 +163,34 @@ export function InputModeProvider({ children }: { children: ReactNode }) {
         mode === "pen" || (mode === "auto" && e.pointerType === "pen");
 
       if (wantPen) {
-        // Without this the browser focuses the field it just heard a tap on,
-        // and iPadOS raises the keyboard over the ink sheet.
+        // preventDefault is not enough on its own, but it still suppresses the
+        // desktop focus ring and any text selection from the tap.
         e.preventDefault();
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
-        if (targetRef.current !== editable) spanRef.current = null;
+        if (targetRef.current !== editable) {
+          spanRef.current = null;
+          releaseKeyboard();
+        }
+        blockKeyboard(editable);
         targetRef.current = editable;
         setPenSheetOpen(true);
       } else if (mode === "auto" && e.pointerType === "touch") {
+        // A finger is an explicit request to type, so hand the field back.
+        releaseKeyboard();
+        editable.readOnly = false;
         setPenSheetOpen(false);
         editable.focus();
       } else if (mode === "keyboard") {
+        releaseKeyboard();
         setPenSheetOpen(false);
       }
     }
 
     document.addEventListener("pointerdown", onPointerDown, true);
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
-  }, [mode]);
+  }, [mode, blockKeyboard, releaseKeyboard]);
 
   const onRecognize = useCallback(
     async (imageBase64: string, recognizeMode: "text" | "math", session: number) => {

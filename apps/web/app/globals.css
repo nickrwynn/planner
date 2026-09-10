@@ -936,6 +936,55 @@ html.agentCollapsed .appShell {
   caret-color: transparent;
 }
 
+.inkDiagnostics {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-inset);
+  font-size: 12px;
+}
+
+.inkDiagnostics > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+}
+
+.inkDiagRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.inkDiagRow > span:first-child {
+  color: var(--fg-muted);
+}
+
+.inkDiagRow > span:last-child {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.inkDiagText {
+  margin: 4px 0;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Ink is dark on white, so keep a light backing in either theme. */
+.inkDiagImage {
+  display: block;
+  max-width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--border-strong);
+  background: #ffffff;
+}
+
 .studyProgressStrip {
   margin-top: 8px;
   padding: 8px 10px;

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cropInkToDataUrl, growBounds, type InkBounds } from "../lib/ink-crop";
+import { recordPointer } from "../lib/ink-diagnostics";
 import type { StudyExcerpt } from "../lib/studyflow-actions";
+import { InkDiagnostics } from "./ink-diagnostics";
 
 export type PaperStyle = "notebook" | "printer";
 
@@ -60,6 +62,11 @@ export function StudyNotebook({
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mode, setMode] = useState<"text" | "math">("text");
   const [writing, setWriting] = useState(false);
+  /**
+   * Keeps the iPad keyboard down until a finger asks for it. The pencil never
+   * needs it, and it covers the page you are writing on.
+   */
+  const [keyboardBlocked, setKeyboardBlocked] = useState(true);
   const [busy, setBusy] = useState(false);
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -171,9 +178,22 @@ export function StudyNotebook({
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    recordPointer({ type: e.pointerType, pressure: e.pressure, surface: "notebook" });
+
     // Finger and mouse fall through to the textarea so the keyboard opens.
-    if (e.pointerType !== "pen" || inkDisabled) return;
-    // Stop the pen from focusing the field or opening the global ink sheet.
+    if (e.pointerType !== "pen" || inkDisabled) {
+      // Set on the DOM node too: iOS decides about the keyboard during this
+      // tap, well before React could re-render with a new prop. The state keeps
+      // later renders agreeing, so typing isn't cut off mid-word.
+      if (textRef.current) textRef.current.readOnly = false;
+      setKeyboardBlocked(false);
+      return;
+    }
+    // preventDefault alone does not stop iPadOS raising the keyboard — it acts
+    // on the synthesized tap, not on pointerdown. A readonly field is the only
+    // reliable way to keep it down while still accepting programmatic text.
+    if (textRef.current) textRef.current.readOnly = true;
+    setKeyboardBlocked(true);
     e.preventDefault();
     e.stopPropagation();
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -300,6 +320,9 @@ export function StudyNotebook({
                         spellCheck
                         autoCorrect="on"
                         autoCapitalize="sentences"
+                        /* Starts readonly so the first pencil stroke cannot raise
+                         * the keyboard; a finger or mouse tap clears it. */
+                        readOnly={keyboardBlocked}
                       />
                       <canvas ref={canvasRef} className="studyPaperInk" />
                     </div>
@@ -320,6 +343,7 @@ export function StudyNotebook({
                         </button>
                       ) : null}
                     </div>
+                    <InkDiagnostics />
                   </>
                 ) : (
                   <div className="studyNotebookCommentText">
