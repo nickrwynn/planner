@@ -11,14 +11,21 @@ from app.models.resource_chunk import ResourceChunk
 from app.models.user import User
 from app.services import resources as resource_service
 
-# TOC lines like: "1.2Random sampling 4" or "1.2 Random sampling 4"
+# TOC lines like "1.2Random sampling 4", "1.2 Random sampling 4", or — in books
+# whose contents pages carry no page numbers — plain "1.1 Systems of Equations".
+# The title cannot contain digits, so a trailing number is unambiguously a page.
 _TOC_SECTION_RE = re.compile(
-    r"(?m)^\s*(\d+\.\d+)\s*([A-Za-z][^0-9\n]{2,120}?)\s+(\d{1,4})\s*$"
+    r"(?m)^\s*(\d+\.\d+)\s*([A-Za-z][^0-9\n]{2,120}?)(?:\s+(\d{1,4}))?\s*$"
 )
 # TOC chapter lines: "Chapter 1Experiments with random outcomes 1"
 _TOC_CHAPTER_RE = re.compile(
-    r"(?m)^\s*Chapter\s+(\d+)\s*([A-Za-z][^0-9\n]{2,120}?)\s+(\d{1,4})\s*$",
+    r"(?m)^\s*Chapter\s+(\d+)\s*([A-Za-z][^0-9\n]{2,120}?)(?:\s+(\d{1,4}))?\s*$",
     re.IGNORECASE,
+)
+# Many books number chapters bare in the contents: "1 Matrices and Equations".
+# Requiring a capitalised title keeps this off stray numbers in body text.
+_TOC_BARE_CHAPTER_RE = re.compile(
+    r"(?m)^\s*([1-9]\d?)\s+([A-Z][^0-9\n]{3,120}?)(?:\s+(\d{1,4}))?\s*$"
 )
 # Body running headers / section starts: "1.2. Random sampling 5"
 _BODY_SECTION_RE = re.compile(
@@ -79,47 +86,62 @@ def _is_plausible_title(title: str) -> bool:
     # Prefer titles that look like headings (start with a letter, not a lowercase verb-heavy clause)
     if t[0].islower():
         return False
-    # Reject answer-key style short math leftovers
-    if t.count("=") >= 2:
+    # Reject answer-key style math leftovers, e.g. "F(x)=⎧" or "MY(t)=ebtMX(at)".
+    if "=" in t:
         return False
     return True
 
 
-def _parse_toc_entries(text: str) -> list[tuple[str, str, str, int]]:
-    """Return list of (kind, key, title, printed_page)."""
-    out: list[tuple[str, str, str, int]] = []
+def _parse_toc_entries(text: str) -> list[tuple[str, str, str, int | None]]:
+    """
+    Return list of (kind, key, title, printed_page).
+
+    The printed page is None for contents pages that list no page numbers; those
+    entries are still worth keeping, since the body scan can locate them.
+    """
+    out: list[tuple[str, str, str, int | None]] = []
+    seen_chapters: set[str] = set()
+
+    def add_chapter(number: str, raw_title: str, printed: str | None) -> None:
+        title = _clean_title(raw_title)
+        if not _is_plausible_title(title) or number in seen_chapters:
+            return
+        seen_chapters.add(number)
+        out.append(("chapter", f"ch{number}", title, int(printed) if printed else None))
+
     for m in _TOC_CHAPTER_RE.finditer(text):
-        title = _clean_title(m.group(2))
-        if not _is_plausible_title(title):
-            continue
-        out.append(("chapter", f"ch{m.group(1)}", title, int(m.group(3))))
+        add_chapter(m.group(1), m.group(2), m.group(3))
+    for m in _TOC_BARE_CHAPTER_RE.finditer(text):
+        add_chapter(m.group(1), m.group(2), m.group(3))
+
     for m in _TOC_SECTION_RE.finditer(text):
         title = _clean_title(m.group(2))
         if title.lower().startswith("exercise"):
             continue
         if not _is_plausible_title(title):
             continue
-        out.append(("section", m.group(1), title, int(m.group(3))))
+        out.append(("section", m.group(1), title, int(m.group(3)) if m.group(3) else None))
     return out
 
 
-def _find_body_pdf_page(
+def _scan_body_for_heading(
     rows: list[ResourceChunk],
     *,
-    key: str,
+    pattern: re.Pattern[str],
     title: str,
+    skip_chunks: frozenset[int],
 ) -> tuple[int | None, int]:
-    """Locate first body heading for this section; return (pdf_page, chunk_index)."""
     title_token = title.split()[0] if title.split() else ""
-    body_pat = re.compile(
-        rf"(?m)^\s*{re.escape(key)}\.\s+([A-Za-z][^\n]{{2,100}})",
-    )
     for ch in rows:
         text = ch.text or ""
-        # Skip contents pages — they are not body starts.
+        # Skip contents pages — they are not body starts. Only the first page of a
+        # multi-page contents says "Contents", so the identified pages are passed
+        # in; otherwise every entry listed overleaf resolves to the contents page.
+        if ch.chunk_index in skip_chunks:
+            continue
         if re.search(r"(?i)^\s*contents\b", text) or "Contents" in text[:40]:
             continue
-        m = body_pat.search(text)
+        m = pattern.search(text)
         if not m:
             continue
         found_title = _clean_title(m.group(1))
@@ -130,6 +152,30 @@ def _find_body_pdf_page(
             if title_words and found_words and not (title_words & found_words):
                 continue
         return ch.page_number, ch.chunk_index
+    return None, 10**9
+
+
+def _find_body_pdf_page(
+    rows: list[ResourceChunk],
+    *,
+    key: str,
+    title: str,
+    skip_chunks: frozenset[int] = frozenset(),
+) -> tuple[int | None, int]:
+    """Locate first body heading for this section; return (pdf_page, chunk_index)."""
+    # Books differ on whether the section number is followed by a period. Try the
+    # dotted form first so books that use it keep the anchors they already had,
+    # and require a capitalised title in the bare form to avoid matching the
+    # decimals and cross-references that litter mathematical prose.
+    for pattern in (
+        re.compile(rf"(?m)^\s*{re.escape(key)}\.\s+([A-Za-z][^\n]{{2,100}})"),
+        re.compile(rf"(?m)^\s*{re.escape(key)}\s+([A-Z][^\n]{{2,100}})"),
+    ):
+        page, chunk_index = _scan_body_for_heading(
+            rows, pattern=pattern, title=title, skip_chunks=skip_chunks
+        )
+        if page is not None:
+            return page, chunk_index
     return None, 10**9
 
 
@@ -165,17 +211,26 @@ def list_resource_sections(
         return []
 
     # 1) Parse TOC from early "Contents" pages
-    toc_by_key: dict[str, tuple[str, str, int]] = {}
+    toc_by_key: dict[str, tuple[str, str, int | None]] = {}
     toc_chunk_index = 0
+    toc_chunks: set[int] = set()
     for ch in rows:
         text = ch.text or ""
-        if "Contents" not in text and "CONTENTS" not in text and not _TOC_SECTION_RE.search(text):
-            # Still allow a few early pages that look like dense TOC even without the word.
-            if (ch.page_number or 0) > 40:
-                continue
         entries = _parse_toc_entries(text)
-        if not entries:
+        # Only harvest from the contents itself, since body pages mimic TOC lines
+        # in two ways. Running headers read "<page number> <chapter title>", and
+        # the answer key at the back numbers its answers "3.49", "4.19".
+        #
+        # A contents page lists many entries at once; a body page offers at most
+        # its own heading and a running header. That density is what separates
+        # them, because later pages of a multi-page contents carry neither the
+        # word "Contents" nor, in some books, any page numbers.
+        if len(entries) < 3:
             continue
+        looks_like_contents = "Contents" in text or "CONTENTS" in text
+        if not looks_like_contents and (ch.page_number or 0) > 40:
+            continue
+        toc_chunks.add(ch.chunk_index)
         toc_chunk_index = min(toc_chunk_index or ch.chunk_index, ch.chunk_index)
         for kind, key, title, printed in entries:
             # First TOC hit wins (front matter TOC before later repeats)
@@ -215,9 +270,13 @@ def list_resource_sections(
     anchors: list[tuple[int, int]] = []  # (printed, pdf)
     resolved: dict[str, tuple[str, str, int | None, int]] = {}
     for key, (kind, title, printed) in toc_by_key.items():
-        pdf_page, chunk_idx = _find_body_pdf_page(rows, key=key, title=title)
+        pdf_page, chunk_idx = _find_body_pdf_page(
+            rows, key=key, title=title, skip_chunks=frozenset(toc_chunks)
+        )
         if pdf_page is not None:
-            anchors.append((printed, pdf_page))
+            # Only entries that printed a page can anchor the printed→PDF offset.
+            if printed is not None:
+                anchors.append((printed, pdf_page))
             resolved[key] = (kind, title, pdf_page, chunk_idx)
         else:
             resolved[key] = (kind, title, None, 10**9)
@@ -232,8 +291,25 @@ def list_resource_sections(
         if pdf_page is not None:
             continue
         printed = toc_by_key[key][2]
-        if offset is not None:
+        # Contents pages without page numbers leave nothing to offset from, so
+        # such entries keep whatever the body scan found, or no page at all.
+        if offset is not None and printed is not None:
             resolved[key] = (kind, title, max(1, printed + offset), chunk_idx)
+
+    # A chapter opener rarely repeats its own number as a body heading, so fall
+    # back to where its first section begins.
+    for key, (kind, title, pdf_page, chunk_idx) in list(resolved.items()):
+        if kind != "chapter" or pdf_page is not None:
+            continue
+        number = key[2:]
+        starts = [
+            (found[2], found[3])
+            for other, found in resolved.items()
+            if found[0] == "section" and other.startswith(f"{number}.") and found[2] is not None
+        ]
+        if starts:
+            first_page, first_chunk = min(starts)
+            resolved[key] = (kind, title, first_page, min(first_chunk, chunk_idx))
 
     ordered_keys = sorted(resolved.keys(), key=_section_sort_key)
     sections = [
